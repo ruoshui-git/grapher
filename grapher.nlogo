@@ -1,10 +1,11 @@
 ; global variables declared with sliders:
 ; number-of-labels label-length
 ; x-max y-max
+; graphing-speed
 
-;TODO:
-  ; graph speed
+;TODOs:
   ; code cleanup, organize more into MVC, perhaps?
+
 
 ; model
 
@@ -23,13 +24,14 @@ globals [
 to reset-all
   set number-of-labels 15
   set label-length 0.3
-  set x-max 16
-  set y-max 16
+  set x-max max-pxcor
+  set y-max max-pycor
+  set graphing-speed 100
   set expression ""
+  setup
 end
 
 to-report modify [str]
-
   let reporter-str (word "[ x -> " str " ]")
   print reporter-str
   report (runresult reporter-str)
@@ -39,18 +41,8 @@ end
 to set-grid [new-x-max new-y-max]
   set x-factor (new-x-max / max-pxcor)
   set y-factor (new-y-max / max-pycor)
-  ask patch (max-pxcor - 1) -1 [
-    set plabel word "max: " new-x-max
-  ]
-  ask patch -1 (max-pycor) [
-    set plabel word "max: " new-y-max
-  ]
-  ask patch (min-pxcor + 4) -1 [
-    set plabel word "min: -" new-x-max
-  ]
-  ask patch -1 (min-pycor + 1) [
-    set plabel word "min: -" new-y-max
-  ]
+
+  label-xy new-x-max new-y-max
 
   set cur-x-max new-x-max
   set cur-y-max new-y-max
@@ -62,8 +54,9 @@ end
 
 to setup
   ca
-  setup-guides number-of-labels label-length
+  update-axes
   set-grid x-max y-max
+  reset-ticks
 end
 
 to graph
@@ -115,37 +108,50 @@ to graph
       ; update x y
       set x (x + 0.01)
       set y (runresult func x)
+
+      ; graphing speed
+      if graphing-speed != 100 [
+        wait 0.01 / (graphing-speed)
+      ]
     ]
 
     die
   ]
+  tick
 end
 
-to update-grid
-  clear-graph
+to update-window
+  clear-window
   set-grid x-max y-max
 end
 
+to update-axes
+  clear-view
+  setup-guides number-of-labels label-length
+end
+
+to clear-window
+  clear-view
+  setup-guides cur-num-labels cur-label-length
+end
 
 ; view
 
-to clear-graph
+to clear-view
   cd
   ask turtles [die]
-  setup-guides cur-num-labels cur-label-length
-  set-grid cur-x-max cur-y-max
 end
 
 to setup-guides [num-label len]
   cro 1 [
-    set color white
     set hidden? true
+    set color white
   ]
 
   draw-axes
   label-axes num-label len
 
-  ; retain latest setting - to be used by clear-graph
+  ; retain latest setting - to be used by clear-window
   set cur-num-labels num-label
   set cur-label-length len
 
@@ -154,30 +160,30 @@ to setup-guides [num-label len]
   ]
 end
 
-to draw-axes ; turtles needed
-  ask turtles [
-    setxy 0 0 pd
-    set ycor max-pycor pu
-    stamp
+  to draw-axes ; turtles needed
+    ask turtles [
+      setxy 0 0 pd
+      set ycor max-pycor pu
+      stamp
 
-    setxy 0 0 pd
-    set xcor max-pxcor pu
-    rt 90
-    stamp
+      setxy 0 0 pd
+      set xcor max-pxcor pu
+      rt 90
+      stamp
 
-    setxy 0 0 pd
-    set ycor min-pycor pu
-    rt 90
-    stamp
+      setxy 0 0 pd
+      set ycor min-pycor pu
+      rt 90
+      stamp
 
-    setxy 0 0 pd
-    set xcor min-pxcor pu
-    rt 90
-    stamp
-  ]
-end
+      setxy 0 0 pd
+      set xcor min-pxcor pu
+      rt 90
+      stamp
+    ]
+  end
 
-to label-axes [num len] ; turtles needed
+  to label-axes [num len] ; turtles needed
   ask patch (max-pxcor - 1) 1 [
     set plabel "x"
   ]
@@ -197,19 +203,32 @@ to label-axes [num len] ; turtles needed
   ]
 end
 
+to label-xy [x y]
+  ask patch (max-pxcor - 1) -1 [
+    set plabel word "max: " x
+  ]
+  ask patch (min-pxcor + 4) -1 [
+    set plabel word "min: -" x
+  ]
+  ask patch -1 (max-pycor) [
+    set plabel word "max: " y
+  ]
+  ask patch -1 (min-pycor + 1) [
+    set plabel word "min: -" y
+  ]
 
-
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-200
-45
-597
-443
+31
+10
+522
+502
 -1
 -1
 11.8
 1
-10
+11
 1
 1
 1
@@ -217,10 +236,10 @@ GRAPHICS-WINDOW
 1
 1
 1
--16
-16
--16
-16
+-20
+20
+-20
+20
 0
 0
 1
@@ -228,12 +247,12 @@ ticks
 30.0
 
 BUTTON
-20
-42
-188
-75
-setup (by current settings)
-setup
+571
+534
+739
+567
+update axes
+update-axes
 NIL
 1
 T
@@ -242,43 +261,43 @@ NIL
 NIL
 NIL
 NIL
-1
+0
 
 SLIDER
-656
-44
-1297
-77
+574
+294
+1215
+327
 x-max
 x-max
 10
 100
-16.0
+20.0
 0.1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-656
-82
-1298
-115
+574
+332
+1216
+365
 y-max
 y-max
 10
 100
-16.0
+20.0
 0.1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-17
-88
-189
-121
+572
+450
+744
+483
 number-of-labels
 number-of-labels
 1
@@ -290,10 +309,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-17
-129
-189
-162
+572
+491
+744
+524
 label-length
 label-length
 0
@@ -305,11 +324,11 @@ NIL
 HORIZONTAL
 
 BUTTON
-21
-272
-165
-305
-reset-all-parameters
+656
+39
+741
+72
+reset all
 reset-all
 NIL
 1
@@ -322,10 +341,10 @@ NIL
 1
 
 INPUTBOX
-657
-193
-1219
-253
+574
+113
+1136
+173
 expression
 NIL
 1
@@ -333,12 +352,12 @@ NIL
 String (reporter)
 
 BUTTON
-657
-274
-777
-307
-graph new
-graph 
+764
+179
+894
+212
+NIL
+graph
 NIL
 1
 T
@@ -347,15 +366,15 @@ NIL
 NIL
 NIL
 NIL
-1
+0
 
 BUTTON
-657
-313
-775
-346
-empty-graph
-clear-graph
+728
+222
+852
+255
+clear wnidow
+clear-window
 NIL
 1
 T
@@ -364,15 +383,15 @@ NIL
 NIL
 NIL
 NIL
-1
+0
 
 BUTTON
-785
-274
-932
-307
+574
+222
+721
+255
 clear and then graph
-clear-graph\ngraph
+clear-window\ngraph
 NIL
 1
 T
@@ -381,15 +400,15 @@ NIL
 NIL
 NIL
 NIL
-1
+0
 
 BUTTON
-656
-122
-806
-155
-NIL
-update-grid
+799
+371
+949
+404
+update window
+update-window
 NIL
 1
 T
@@ -398,15 +417,87 @@ NIL
 NIL
 NIL
 NIL
+0
+
+BUTTON
+573
+371
+792
+404
+update window and graph
+update-window\ngraph
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+TEXTBOX
+577
+425
+727
+443
+Axes settings:
+12
+0.0
+1
+
+TEXTBOX
+578
+91
+728
+109
+Graphing
+12
+0.0
+1
+
+TEXTBOX
+575
+267
+725
+285
+Window
+12
+0.0
+1
+
+SLIDER
+574
+180
+746
+213
+graphing-speed
+graphing-speed
+1
+100
+100.0
+1
+1
+NIL
+HORIZONTAL
+
+TEXTBOX
+575
+14
+725
+32
+Model Control
+12
+0.0
 1
 
 BUTTON
-813
-122
-946
-155
-update and graph
-update-grid\ngraph
+574
+40
+647
+73
+NIL
+setup
 NIL
 1
 T
@@ -769,7 +860,7 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 6.0.4
+NetLogo 6.0.1
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
