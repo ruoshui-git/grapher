@@ -7,6 +7,10 @@ to setup
 
   draw-axes
   label-axes number-of-labels label-length
+
+  ask turtles [
+    die
+  ]
 end
 
 to reset
@@ -39,7 +43,6 @@ to draw-axes
 end
 
 to label-axes [num len]
-
   ask patch (max-pxcor - 1) 1 [
     set plabel "x"
   ]
@@ -62,22 +65,54 @@ end
 to graph
   cro 1 [
     set color pink
+    set shape "dot"
+    set size 0.5
   ]
 
   ask turtles [
+    ; set up function to graph
+    let func (modify expression)
+
+    ; initialize x y
     let x (-1 * x-max)
-    setxy x (runresult expression)
-    pd
+    let y (runresult func x)
+
+    ; var to keep track of whether just graphed (because of boundary issues)
+    let graphed false
+
+    ; graph from left to right
     while [x < x-max] [
+
+      ; plot if y is not outside of boundary
+      ifelse (abs y) <= y-max [
+        ifelse graphed [
+          pd
+          setxy x y
+          stamp
+          pu
+        ]
+        [
+          setxy x y
+          stamp
+          set graphed true
+        ]
+      ]
+      [
+        ; if didn't graph:
+        set graphed false
+      ]
+
+      ; update x y
       set x (x + 0.1)
-      setxy x (runresult expression)
+      set y (runresult func x)
     ]
   ]
 end
 
-to-report modify [str] [
-
-]
+to-report modify [str]
+  let reporter-str (word "[ x -> " str " ]")
+  print reporter-str
+  report (runresult reporter-str)
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -101,8 +136,8 @@ GRAPHICS-WINDOW
 16
 -16
 16
-1
-1
+0
+0
 1
 ticks
 30.0
@@ -133,7 +168,7 @@ x-max
 x-max
 10
 100
-16.0
+16.2
 0.1
 1
 NIL
@@ -204,10 +239,10 @@ NIL
 INPUTBOX
 658
 147
-813
+1220
 207
 expression
-x ^ 2 + x + 1
+20 * (e ^ ( x * x * -.07))
 1
 0
 String (reporter)
