@@ -1,5 +1,7 @@
 # Grapher
 
+![Demo of Grapher](demo/demo.gif)
+
 To use/view the NetLogo models, you need to [download NetLogo](https://ccl.northwestern.edu/netlogo/).
 
 `grapher.nlogo` - most complete; graphing calculator, able to graph \*most\* implicit graphs
