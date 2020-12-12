@@ -41,7 +41,7 @@ patches-own
   ;; for window size
   wxcor wycor
   ;; for graphing
-  wzcor
+  wzcor on-graph?
 ]
 
 ; reset all parameters
@@ -133,6 +133,12 @@ to setup
   output.setup
   set equation# 0
 
+  ask patches
+  [
+    set wxcor pxcor
+    set wycor pycor
+  ]
+
   set show-coordinates? true
   reset-ticks
 end
@@ -216,11 +222,14 @@ end
 
 ; graph the given equation: function (as anonymous reporter)
 to graph-implicit [ equation ]
+  ;; reset patches state
+  ask patches
+  [ set on-graph? false]
 
   ;; compute and store height to the surface
   ask patches
   [
-    set wzcor (runresult equation pxcor pycor)
+    set wzcor (runresult equation wxcor wycor)
   ]
 
   ;; for points that intercept the surface, or likely so, compute graph
@@ -229,15 +238,21 @@ to graph-implicit [ equation ]
     compute-graph
   ]
 
-  ask patches
+  ;; graph pts that are on graph
+  ask patches with [on-graph?]
   [
-    let val round (runresult equation pxcor pycor)
-    ;if val < 3 and val > -3
-    if abs val < implicit-graph-tolerance
-    [
-      set pcolor pink
-    ]
+    set pcolor pink
   ]
+
+;  ask patches
+;  [
+;    let val round (runresult equation pxcor pycor)
+;    ;if val < 3 and val > -3
+;    if abs val < implicit-graph-tolerance
+;    [
+;      set pcolor pink
+;    ]
+;  ]
   tick
 end
 
@@ -259,7 +274,47 @@ end
 
 ;; patch procedure
 to compute-graph
-  neighbors
+  let heights [wzcor] of neighbors
+  ;; if pt above than plane
+  ifelse wzcor > 0
+  [
+    ;; if all neighbors are above plane
+    if all? neighbors [wzcor > 0]
+    [
+      ;; then this pt is not on graph, nor are the neighbors
+      stop
+    ]
+    ;; if all neighbors are below plane
+    ifelse all? neighbors [wzcor < 0]
+    [
+      ;; then this pt is on graph, but none of the neighbors are
+      set on-graph? true
+    ]
+
+    [
+      ;; else this pt is in the intersection, and 2 neighbors should also be on graph
+
+    ]
+  ]
+  ;; if pt below than plane
+  [
+    ;; if all neighbors below plane
+    if all? neighbors [wzcor < 0]
+    [
+      ;; then this pt is not on graph, nor are the neighbors
+      stop
+    ]
+    ;; if all neighbors are above plane
+    ifelse all? neighbors [wzcor > 0]
+    [
+      ;; then this pt is on plane, but none of the neighbors are
+      set on-graph? true
+    ]
+    [
+      ;; else this point is in the intersection, and 2 neighbors should also be on graph
+
+    ]
+  ]
 end
 
 ; clear all drawings and agents
@@ -473,7 +528,7 @@ x-max
 x-max
 0.1
 100
-98.9
+61.6
 0.1
 1
 NIL
@@ -488,7 +543,7 @@ y-max
 y-max
 0.1
 100
-99.4
+61.8
 0.1
 1
 NIL
@@ -503,7 +558,7 @@ number-of-labels
 number-of-labels
 1
 40
-15.0
+0.0
 1
 1
 NIL
@@ -518,7 +573,7 @@ label-length
 label-length
 0
 max-pxcor
-0.3
+0.0
 0.1
 1
 NIL
@@ -547,7 +602,7 @@ INPUTBOX
 1072
 173
 =0
-5 * (abs x - 100) ^ 2 + (abs y - 50) ^ 2 - 1000
+x ^ 2 + y ^ 2 - 500
 1
 0
 String (reporter)
@@ -724,7 +779,7 @@ INPUTBOX
 1267
 387
 equation#
-1.0
+2.0
 1
 0
 Number
@@ -776,7 +831,7 @@ coordinate-precision
 coordinate-precision
 0
 10
-2.0
+0.0
 1
 1
 dec. places
@@ -789,10 +844,10 @@ SLIDER
 459
 implicit-graph-tolerance
 implicit-graph-tolerance
+0.001
 1
-500
-75.0
-1
+1.0
+0.001
 1
 NIL
 HORIZONTAL
