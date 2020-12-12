@@ -1,25 +1,160 @@
+; global variables declared with sliders:
+; number-of-labels label-length
+; x-max y-max
+
+;TODO:
+  ; graph speed
+  ; code cleanup, organize more into MVC, perhaps?
+
+; model
+
+globals [
+  ; for clear-graph
+  cur-num-labels
+  cur-label-length
+  cur-x-max
+  cur-y-max
+
+  ; for implementing grid system
+  x-factor
+  y-factor
+]
+
+to reset-all
+  set number-of-labels 15
+  set label-length 0.3
+  set x-max 16
+  set y-max 16
+  set expression ""
+end
+
+to-report modify [str]
+
+  let reporter-str (word "[ x -> " str " ]")
+  print reporter-str
+  report (runresult reporter-str)
+end
+
+; model-ish (has a "view" part)
+to set-grid [new-x-max new-y-max]
+  set x-factor (new-x-max / max-pxcor)
+  set y-factor (new-y-max / max-pycor)
+  ask patch (max-pxcor - 1) -1 [
+    set plabel word "max: " new-x-max
+  ]
+  ask patch -1 (max-pycor) [
+    set plabel word "max: " new-y-max
+  ]
+  ask patch (min-pxcor + 4) -1 [
+    set plabel word "min: -" new-x-max
+  ]
+  ask patch -1 (min-pycor + 1) [
+    set plabel word "min: -" new-y-max
+  ]
+
+  set cur-x-max new-x-max
+  set cur-y-max new-y-max
+end
+
+
+
+; controllers
+
 to setup
   ca
+  setup-guides number-of-labels label-length
+  set-grid x-max y-max
+end
+
+to graph
+  if expression = "" [ stop ]
+
+  ; create the graphing agent
+  cro 1 [
+    set hidden? true
+    set color pink
+    set shape "dot"
+    set size 0.3
+  ]
+
+  ; set up function to graph
+  let func (modify expression)
+
+  ; initialize x y
+  let x (-1 * cur-x-max)
+  let y (runresult func x)
+
+  ask turtles [
+
+    ; var to keep track of whether just graphed (because of boundary issues)
+    ; make sure turtle produce the correct graph when the last point is out of bound
+    let graphed false
+
+    ; graph from left to right
+    while [x < cur-x-max] [
+
+      ; plot if y is not outside of boundary
+      ifelse (abs y) <= cur-y-max [
+        ifelse graphed [
+          pd
+          setxy x / x-factor y / y-factor
+          stamp
+          pu
+        ]
+        [
+          ; makes sure to not connect the last point if it was outside of boundary
+          setxy x / x-factor y / y-factor
+          stamp
+          set graphed true
+        ]
+      ]
+      [
+        set graphed false
+      ]
+
+      ; update x y
+      set x (x + 0.01)
+      set y (runresult func x)
+    ]
+
+    die
+  ]
+end
+
+to update-grid
+  clear-graph
+  set-grid x-max y-max
+end
+
+
+; view
+
+to clear-graph
+  cd
+  ask turtles [die]
+  setup-guides cur-num-labels cur-label-length
+  set-grid cur-x-max cur-y-max
+end
+
+to setup-guides [num-label len]
   cro 1 [
     set color white
     set hidden? true
   ]
 
   draw-axes
-  label-axes number-of-labels label-length
+  label-axes num-label len
+
+  ; retain latest setting - to be used by clear-graph
+  set cur-num-labels num-label
+  set cur-label-length len
 
   ask turtles [
     die
   ]
 end
 
-to reset
-  set number-of-labels 10
-  set label-length 0.4
-  setup
-end
-
-to draw-axes
+to draw-axes ; turtles needed
   ask turtles [
     setxy 0 0 pd
     set ycor max-pycor pu
@@ -42,7 +177,7 @@ to draw-axes
   ]
 end
 
-to label-axes [num len]
+to label-axes [num len] ; turtles needed
   ask patch (max-pxcor - 1) 1 [
     set plabel "x"
   ]
@@ -62,58 +197,8 @@ to label-axes [num len]
   ]
 end
 
-to graph
-  cro 1 [
-    set color pink
-    set shape "dot"
-    set size 0.5
-  ]
 
-  ask turtles [
-    ; set up function to graph
-    let func (modify expression)
 
-    ; initialize x y
-    let x (-1 * x-max)
-    let y (runresult func x)
-
-    ; var to keep track of whether just graphed (because of boundary issues)
-    let graphed false
-
-    ; graph from left to right
-    while [x < x-max] [
-
-      ; plot if y is not outside of boundary
-      ifelse (abs y) <= y-max [
-        ifelse graphed [
-          pd
-          setxy x y
-          stamp
-          pu
-        ]
-        [
-          setxy x y
-          stamp
-          set graphed true
-        ]
-      ]
-      [
-        ; if didn't graph:
-        set graphed false
-      ]
-
-      ; update x y
-      set x (x + 0.1)
-      set y (runresult func x)
-    ]
-  ]
-end
-
-to-report modify [str]
-  let reporter-str (word "[ x -> " str " ]")
-  print reporter-str
-  report (runresult reporter-str)
-end
 @#$#@#$#@
 GRAPHICS-WINDOW
 200
@@ -143,12 +228,12 @@ ticks
 30.0
 
 BUTTON
-18
-51
-106
-84
-setup-grid
-setup\n
+20
+42
+188
+75
+setup (by current settings)
+setup
 NIL
 1
 T
@@ -168,7 +253,7 @@ x-max
 x-max
 10
 100
-16.2
+16.0
 0.1
 1
 NIL
@@ -191,14 +276,14 @@ HORIZONTAL
 
 SLIDER
 17
-93
+88
 189
-126
+121
 number-of-labels
 number-of-labels
 1
 40
-10.0
+15.0
 1
 1
 NIL
@@ -206,26 +291,26 @@ HORIZONTAL
 
 SLIDER
 17
-134
+129
 189
-167
+162
 label-length
 label-length
 0
 max-pxcor
-0.4
+0.3
 0.1
 1
 NIL
 HORIZONTAL
 
 BUTTON
-124
-52
-187
-85
-NIL
-reset
+21
+272
+165
+305
+reset-all-parameters
+reset-all
 NIL
 1
 T
@@ -237,23 +322,91 @@ NIL
 1
 
 INPUTBOX
-658
-147
-1220
-207
+657
+193
+1219
+253
 expression
-20 * (e ^ ( x * x * -.07))
+NIL
 1
 0
 String (reporter)
 
 BUTTON
-658
-228
-732
-261
+657
+274
+777
+307
+graph new
+graph 
 NIL
-graph
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+657
+313
+775
+346
+empty-graph
+clear-graph
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+785
+274
+932
+307
+clear and then graph
+clear-graph\ngraph
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+656
+122
+806
+155
+NIL
+update-grid
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+813
+122
+946
+155
+update and graph
+update-grid\ngraph
 NIL
 1
 T
@@ -616,7 +769,7 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 6.0.1
+NetLogo 6.0.4
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
