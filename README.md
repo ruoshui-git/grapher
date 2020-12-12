@@ -12,11 +12,9 @@ _\*most\* because equations like x^3+y^3+1=3xy (or its translational variants) a
 
 `fn-grapher.nlogo` - graphing calculator, only supports graphing functions. This is the most complete version before the implicit grapher.
 
-`phone-addict-animation.nlogo` - a fun animation with a moral
-
 # Grapher Usage
 
-(Copied directly from `grapher.nlogo`)
+This is for the implicit grapher (`grapher.nlogo`) only, though `fn-grapher.nlogo` was the predecessor and works similarly, but with less features.
 
 ## WHAT IS IT?
 
