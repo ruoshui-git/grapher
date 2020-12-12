@@ -24,8 +24,6 @@ globals
   ; for clear-graph
   cur-num-labels
   cur-label-length
-  cur-x-max
-  cur-y-max
 
   ; for internal grid system
   x-factor
@@ -34,6 +32,7 @@ globals
   ; keep track of graphed equations
   equations
 
+  slider-min1 slider-max1
 ]
 
 patches-own
@@ -74,8 +73,11 @@ to set-grid [new-x-max new-y-max]
 
   label-bounds new-x-max new-y-max
 
-  set cur-x-max new-x-max
-  set cur-y-max new-y-max
+  ask patches
+  [
+    set wxcor x-factor * pxcor
+    set wycor y-factor * pycor
+  ]
 end
 
 to-report equations.exist? [ y ]
@@ -106,8 +108,8 @@ end
 ; graph all equations in "equations", WITHOUT doing anything else
 to equations.graph-all
   if equations = 0 or empty? equations [ stop ]
-  let functions (map modify equations)
-  foreach functions graph-implicit
+  let implicit-equations (map modify equations)
+  foreach implicit-equations graph-implicit
 end
 
 ;
@@ -128,16 +130,13 @@ to separate-comments end
 to setup
   ca
   set equations []
-  update-axes
+
+;  update-axes
+
   set-grid x-max y-max
   output.setup
   set equation# 0
 
-  ask patches
-  [
-    set wxcor pxcor
-    set wycor pycor
-  ]
 
   set show-coordinates? true
   reset-ticks
@@ -149,19 +148,15 @@ to add-graph
   if =0 = "" [ stop ]
   if equations.exist? =0 [ stop ]
 
-
-
   ; catch user error or division by 0
   carefully
   [
-    let implicit (modify =0)
-    graph-implicit implicit
+    let implicit-equation (modify =0)
+    graph-implicit implicit-equation
     equations.add =0
     output.setup
     output.print-equations
     set equation# length equations
-
-
   ]
   ; catch error
   [
@@ -178,9 +173,9 @@ end
 ; clear all graphs and update internal grid
 ; calls: set-grid [], setup-guides [], equations.graph-all
 to update-window
-  cd
+  cp
   set-grid x-max y-max
-  setup-guides cur-num-labels cur-label-length
+;  setup-guides cur-num-labels cur-label-length
   equations.graph-all
 end
 
@@ -196,7 +191,13 @@ end
 ; calls: clear-view, setup-guides []
 to clear-window
   clear-view
-  setup-guides cur-num-labels cur-label-length
+;  setup-guides cur-num-labels cur-label-length
+end
+
+; clear window and graph
+to clear-window-graph
+  clear-window
+  add-graph
 end
 
 ; reset-axes-labels
@@ -209,9 +210,9 @@ to reset-axes
 end
 
 ; remove the equation that "equation#" is pointing to
-; calls: remove-function
-to remove-equation
-  remove-function equation#
+; calls: remove-equation
+to button.remove-equation
+  remove-equation equation#
 end
 
 ; (forever button needed) show the coordinates/closest graph of current mouse position
@@ -232,17 +233,33 @@ to graph-implicit [ equation ]
     set wzcor (runresult equation wxcor wycor)
   ]
 
-  ;; for points that intercept the surface, or likely so, compute graph
-  ask patches with [abs wzcor < implicit-graph-tolerance]
+  ask patches
   [
-    compute-graph
+    ifelse wzcor = 0
+    [ set on-graph? true]
+    [
+      if wzcor > 0
+      [
+        if any? neighbors with [ wzcor < 0 ]
+        [ set on-graph? true ]
+      ]
+    ]
   ]
 
-  ;; graph pts that are on graph
   ask patches with [on-graph?]
-  [
-    set pcolor pink
-  ]
+  [ set pcolor pink ]
+
+;  ;; for points that intercept the surface, or likely so, compute graph
+;  ask patches with [abs wzcor < implicit-graph-tolerance]
+;  [
+;    compute-graph
+;  ]
+;
+;  ;; graph pts that are on graph
+;  ask patches with [on-graph?]
+;  [
+;    set pcolor pink
+;  ]
 
 ;  ask patches
 ;  [
@@ -257,7 +274,7 @@ to graph-implicit [ equation ]
 end
 
 ; remove a function: index
-to remove-function [ index ]
+to remove-equation [ index ]
   if index > length equations [ stop ]
   if index = 0 [ stop ]
   equations.remove index
@@ -272,56 +289,13 @@ end
 ;; view
 ;;
 
-;; patch procedure
-to compute-graph
-  let heights [wzcor] of neighbors
-  ;; if pt above than plane
-  ifelse wzcor > 0
-  [
-    ;; if all neighbors are above plane
-    if all? neighbors [wzcor > 0]
-    [
-      ;; then this pt is not on graph, nor are the neighbors
-      stop
-    ]
-    ;; if all neighbors are below plane
-    ifelse all? neighbors [wzcor < 0]
-    [
-      ;; then this pt is on graph, but none of the neighbors are
-      set on-graph? true
-    ]
-
-    [
-      ;; else this pt is in the intersection, and 2 neighbors should also be on graph
-
-    ]
-  ]
-  ;; if pt below than plane
-  [
-    ;; if all neighbors below plane
-    if all? neighbors [wzcor < 0]
-    [
-      ;; then this pt is not on graph, nor are the neighbors
-      stop
-    ]
-    ;; if all neighbors are above plane
-    ifelse all? neighbors [wzcor > 0]
-    [
-      ;; then this pt is on plane, but none of the neighbors are
-      set on-graph? true
-    ]
-    [
-      ;; else this point is in the intersection, and 2 neighbors should also be on graph
-
-    ]
-  ]
-end
-
-; clear all drawings and agents
-; calls: output.setup, equations.remove-all
+;; clear all drawings and agents
+;; calls: output.setup, equations.remove-all
 to clear-view
-  cd
-  ask turtles [die]
+  ; this will reset patch colors
+  ; don't use "cp", since it would reset the x y values
+  ask patches
+  [ set pcolor black ]
   output.setup
   equations.remove-all
 end
@@ -528,7 +502,7 @@ x-max
 x-max
 0.1
 100
-61.6
+250.0
 0.1
 1
 NIL
@@ -543,7 +517,7 @@ y-max
 y-max
 0.1
 100
-61.8
+250.0
 0.1
 1
 NIL
@@ -558,7 +532,7 @@ number-of-labels
 number-of-labels
 1
 40
-0.0
+15.0
 1
 1
 NIL
@@ -573,7 +547,7 @@ label-length
 label-length
 0
 max-pxcor
-0.0
+0.3
 0.1
 1
 NIL
@@ -602,7 +576,7 @@ INPUTBOX
 1072
 173
 =0
-x ^ 2 + y ^ 2 - 500
+sin (x * 180 / pi) + cos ( y * 180 / pi) + offset
 1
 0
 String (reporter)
@@ -647,7 +621,7 @@ BUTTON
 882
 254
 clear window and graph
-clear-window\nadd-graph
+clear-window-graph
 NIL
 1
 T
@@ -762,7 +736,7 @@ BUTTON
 1175
 361
 remove equation of #
-remove-equation
+button.remove-equation
 NIL
 1
 T
@@ -779,7 +753,7 @@ INPUTBOX
 1267
 387
 equation#
-2.0
+0.0
 1
 0
 Number
@@ -831,7 +805,7 @@ coordinate-precision
 coordinate-precision
 0
 10
-0.0
+2.0
 1
 1
 dec. places
@@ -851,6 +825,60 @@ implicit-graph-tolerance
 1
 NIL
 HORIZONTAL
+
+SLIDER
+1260
+416
+1432
+449
+offset
+offset
+slider-min1
+slider-max1
+0.0
+.1
+1
+.
+HORIZONTAL
+
+INPUTBOX
+1040
+508
+1119
+568
+slider-min
+-50.0
+1
+0
+Number
+
+INPUTBOX
+1167
+543
+1328
+603
+slider-max
+30.0
+1
+0
+Number
+
+BUTTON
+1200
+478
+1602
+511
+NIL
+set slider-min1 slider-min\nset slider-max1 slider-max
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
 
 @#$#@#$#@
 ## THIS IS A PART OF THE LARGER PROJECT. IT IS ***INCOMPLETE***
