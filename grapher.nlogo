@@ -25,6 +25,9 @@
 
 globals
 [
+  ; track whether model is initialized (useful for stopping forever buttons on "ca")
+  init?
+
   ; for clear-graph
   cur-num-labels
   cur-label-length
@@ -212,6 +215,7 @@ to setup
   ca
   reset-ticks
 
+  set init? 1
 
   set equations []
   set DEFAULT-X 10
@@ -325,6 +329,7 @@ to update-constant-sliders
 end
 
 to detect-change
+  if init? = 0 [ stop ]
   every 0.5
   [
     if a != old-a or b != old-b or c != old-c
@@ -381,6 +386,10 @@ end
 
 ;; move window based on user interaction
 to move-window
+  if init? = 0 ; has not setup yet; this can happen if `ca` is used while the botton is pressed
+  [
+    stop
+  ]
   if mouse-inside?
   [
     let is-mouse-down? mouse-down?
@@ -437,6 +446,10 @@ end
 
 ;; (forever button needed) show the coordinates/closest graph of current mouse position
 to show-coordinates
+  if init? = 0 ; fix error on `ca` when pressed
+  [
+    stop
+  ]
   ifelse mouse-down?
   [
     set showing-coordinate? true
@@ -860,7 +873,7 @@ INPUTBOX
 1082
 173
 =0
-x - 2 ^ y
+sin(100 * x) - cos(100 * y)
 1
 0
 String (reporter)
@@ -1126,7 +1139,7 @@ SWITCH
 412
 show-axes?
 show-axes?
-0
+1
 1
 -1000
 
@@ -1206,7 +1219,7 @@ a
 a
 f-a-min
 f-a-max
-3.0
+0.0
 f-a-increment
 1
 NIL
@@ -1254,7 +1267,7 @@ b
 b
 f-b-min
 f-b-max
--6.0
+0.0
 f-b-increment
 1
 NIL
@@ -1310,7 +1323,7 @@ INPUTBOX
 943
 791
 c-increment
-0.5
+1.0
 1
 0
 Number
@@ -1321,7 +1334,7 @@ INPUTBOX
 1031
 791
 c-max
-10.0
+50.0
 1
 0
 Number
@@ -1352,7 +1365,7 @@ c
 c
 f-c-min
 f-c-max
-4.5
+0.0
 f-c-increment
 1
 NIL
@@ -1491,6 +1504,17 @@ To change the minimum, maximum, or the increment step of the sliders, scroll to 
 (suggested things for the user to try to do (move sliders, switches, etc.) with the model)
 --->
 Try some interesting equations.
+
+ - `5 * e ^ (-1 * ((x / 5) ^ 2)) - y` (bell curve)
+
+ - `x - y ^ 2` (sideways parabola)
+
+ - `x - 2 ^ y` (logarithm)
+
+ - `sin(100 * x) - cos(100 * y)` (grid)
+
+ - `sin(100 * x) - 2 * cos(100 * y)` (waves?)
+
 
 ## EXTENDING THE MODEL
 <!---
@@ -1824,7 +1848,7 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 6.0.4
+NetLogo 6.1.1
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
