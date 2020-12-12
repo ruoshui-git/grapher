@@ -1,10 +1,6 @@
-# NETLOGO
+# Grapher
 
-This repo contains my most important works in NetLogo. Maybe I'll use them in the future at some point.
-
-To use/view them, you need to [download NetLogo](https://ccl.northwestern.edu/netlogo/).
-
-# Files
+To use/view the NetLogo models, you need to [download NetLogo](https://ccl.northwestern.edu/netlogo/).
 
 `grapher.nlogo` - most complete; graphing calculator, able to graph \*most\* implicit graphs
 
@@ -12,11 +8,9 @@ _\*most\* because equations like x^3+y^3+1=3xy (or its translational variants) a
 
 `fn-grapher.nlogo` - graphing calculator, only supports graphing functions. This is the most complete version before the implicit grapher.
 
-`phone-addict-animation.nlogo` - a fun animation with a moral
-
 # Grapher Usage
 
-(Copied directly from `grapher.nlogo`)
+This is for the implicit grapher (`grapher.nlogo`) only, though `fn-grapher.nlogo` was the predecessor and works similarly, but with less features.
 
 ## WHAT IS IT?
 
@@ -111,6 +105,16 @@ To change the minimum, maximum, or the increment step of the sliders, scroll to 
 --->
 
 Try some interesting equations.
+
+- `5 * e ^ (-1 * ((x / 5) ^ 2)) - y` (bell curve)
+
+- `x - y ^ 2` (sideways parabola)
+
+- `x - 2 ^ y` (logarithm)
+
+- `sin(100 * x) - cos(100 * y)` (grid)
+
+- `sin(100 * x) - 2 * cos(100 * y)` (waves?)
 
 ## EXTENDING THE MODEL
 
