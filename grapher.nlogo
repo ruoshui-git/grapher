@@ -3,92 +3,269 @@
 ; x-max y-max
 ; graphing-speed
 
+; declared with inputs:
+; y=
+; eqaution#
+
+; declared with swiches:
+; show-coordinates?
+; show-closest-equation?
+
 ;TODOs:
   ; code cleanup, organize more into MVC, perhaps?
+  ; implement mouse-down pt report
+  ; Change line color for new graph
+  ; Display error message in Output and BEEP
+
+;DONE:
+  ;Align open brackets and close brackets
 
 
 ; model
 
-globals [
+globals
+[
   ; for clear-graph
   cur-num-labels
   cur-label-length
   cur-x-max
   cur-y-max
 
-  ; for implementing grid system
+  ; for internal grid system
   x-factor
   y-factor
+
+  ; keep track of graphed equations
+  equations
+
 ]
 
+; reset all parameters
 to reset-all
   set number-of-labels 15
   set label-length 0.3
   set x-max max-pxcor
   set y-max max-pycor
   set graphing-speed 100
-  set expression ""
+  set y= ""
+  set equations []
   setup
 end
 
+; modify user input for graphing
 to-report modify [str]
   let reporter-str (word "[ x -> " str " ]")
   print reporter-str
   report (runresult reporter-str)
 end
 
-; model-ish (has a "view" part)
+; set the internal grid system and update the view
 to set-grid [new-x-max new-y-max]
+
+  ; set internal grid system
   set x-factor (new-x-max / max-pxcor)
   set y-factor (new-y-max / max-pycor)
 
-  label-xy new-x-max new-y-max
+  label-bounds new-x-max new-y-max
 
   set cur-x-max new-x-max
   set cur-y-max new-y-max
 end
 
+to-report equations.exist? [ y ]
+  report member? y equations
+end
 
+; add equation to "equations"
+to equations.add [ y ]
+  set equations lput y equations
+end
 
-; controllers
+; remove equation from "equations"
+to equations.remove [ y ]
+  ifelse is-number? y
+  [
+    set equations remove-item (y - 1) equations
+  ]
+  [
+    set equations remove y equations
+  ]
+end
 
+; remove all equations from "equations"
+to equations.remove-all
+  set equations []
+end
+
+; graph all equations in "equations", WITHOUT doing anything else
+to equations.graph-all
+  if equations = 0 or empty? equations [ stop ]
+  let functions (map modify equations)
+  foreach functions graph-function
+end
+
+; controllers - what buttons should access ONLY
+
+; setup the axes, enable other options, initialize "equations" to empty list
 to setup
   ca
+  set equations []
   update-axes
   set-grid x-max y-max
+  output.setup
+  set equation# 0
+
+  set show-coordinates? true
+  set show-closest-graph? false
   reset-ticks
 end
 
-to graph
-  if expression = "" [ stop ]
+; graph equation in "y="
+; calls: equations.exist?, equations.add, graph-function, modify, output.print-last
+to add-graph
+  if y= = "" [ stop ]
+  if equations.exist? y= [ stop ]
+
+  ; catch user error or division by 0
+  carefully
+  [
+    let function (modify y=)
+    graph-function function
+    equations.add y=
+    output.print-last
+    set equation# length equations
+  ]
+  ; catch error
+  [
+    ; user-message (word "The graph of y = " y= " is not added. The following error has occurred: " error-message " Check equation input to make sure all syntax is correct.")
+    print error-message
+    print "Check the equation input to make sure all syntax are correct"
+  ]
+end
+
+; clear all graphs and update internal grid
+; calls: set-grid [], setup-guides [], equations.graph-all
+to update-window
+  cd
+  set-grid x-max y-max
+  setup-guides cur-num-labels cur-label-length
+  equations.graph-all
+end
+
+; clear the window, setup the view of axes
+; calls: clear-window, setup-guides []
+to update-axes
+  cd
+  setup-guides number-of-labels label-length
+  equations.graph-all
+end
+
+; clear all graphs: clear all drawings and redraw the axes and labels
+; calls: clear-view, setup-guides []
+to clear-window
+  clear-view
+  setup-guides cur-num-labels cur-label-length
+end
+
+; reset-axes-labels
+; calls: clear-view, setup-guides []
+to reset-axes
+  set number-of-labels 15
+  set label-length 0.3
+  clear-view
+  setup-guides number-of-labels label-length
+end
+
+; remove the equation that "equation#" is pointing to
+; calls: remove-function
+to remove-equation
+  remove-function equation#
+end
+
+; (forever button needed) show the coordinates/closest graph of current mouse position
+to show-coordinates
+  ifelse mouse-down? and mouse-inside?
+  [
+    ifelse count turtles with [ shape = "x" ] = 1
+    [
+      ask turtles with [ shape = "x" ]
+      [
+        setxy mouse-xcor mouse-ycor
+        ifelse show-coordinates? and show-closest-graph?
+        [
+          set label (word "(" precision (mouse-xcor * x-factor) coordinate-precision ", " precision (mouse-ycor * y-factor) coordinate-precision ")")
+        ]
+        [
+          ifelse show-coordinates?
+          [
+            set label (word "(" precision (mouse-xcor * x-factor) coordinate-precision ", " precision (mouse-ycor * y-factor) coordinate-precision ")")
+          ]
+          [
+            ifelse show-closest-graph?
+            [
+
+            ]
+            [
+              set label ""
+            ]
+          ]
+        ]
+      ]
+    ]
+    [
+      ask turtles with [shape = "x"]
+      [
+        die
+      ]
+      cro 1
+      [
+        set shape "x"
+        set size 0.5
+        set color red
+      ]
+    ]
+  ]
+  [
+    ask turtles with [ shape = "x" ]
+    [
+      die
+    ]
+  ]
+end
+
+
+; graph the given equation: function (as anonymous reporter)
+to graph-function [ func ]
 
   ; create the graphing agent
-  cro 1 [
+  cro 1
+  [
     set hidden? true
     set color pink
     set shape "dot"
     set size 0.3
   ]
 
-  ; set up function to graph
-  let func (modify expression)
-
   ; initialize x y
   let x (-1 * cur-x-max)
   let y (runresult func x)
 
-  ask turtles [
+  ask turtles with [shape = "dot"]
+  [
 
     ; var to keep track of whether just graphed (because of boundary issues)
     ; make sure turtle produce the correct graph when the last point is out of bound
     let graphed false
 
     ; graph from left to right
-    while [x < cur-x-max] [
+    while [x < cur-x-max]
+    [
 
       ; plot if y is not outside of boundary
-      ifelse (abs y) <= cur-y-max [
-        ifelse graphed [
+      ifelse (abs y) <= cur-y-max
+      [
+        ifelse graphed
+        [
           pd
           setxy x / x-factor y / y-factor
           stamp
@@ -110,7 +287,8 @@ to graph
       set y (runresult func x)
 
       ; graphing speed
-      if graphing-speed != 100 [
+      if graphing-speed != 100
+      [
         wait 0.01 / (graphing-speed)
       ]
     ]
@@ -120,32 +298,37 @@ to graph
   tick
 end
 
-to update-window
-  clear-window
-  set-grid x-max y-max
+; remove a function: index
+to remove-function [ index ]
+  if index > length equations [ stop ]
+  if index = 0 [ stop ]
+  equations.remove index
+  output.setup
+  output.print-equations
+  set equation# length equations
+  update-window
+  equations.graph-all
 end
 
-to update-axes
-  clear-view
-  setup-guides number-of-labels label-length
-end
-
-to clear-window
-  clear-view
-  setup-guides cur-num-labels cur-label-length
-end
 
 ; view
 
+; clear all drawings and agents
+; calls: output.seup, equations.remove-all
 to clear-view
   cd
   ask turtles [die]
+  output.setup
+  equations.remove-all
 end
 
+; draw labels (marks on axes): number of labels, length of each label
+; calls: draw-axes, label-axes[num-label len]
 to setup-guides [num-label len]
-  cro 1 [
+  cro 1
+  [
     set hidden? true
-    set color white
+    set color 4
   ]
 
   draw-axes
@@ -155,13 +338,17 @@ to setup-guides [num-label len]
   set cur-num-labels num-label
   set cur-label-length len
 
-  ask turtles [
+  ask turtles
+  [
     die
   ]
 end
 
+  ; draw four plane axes with arrows on each end
   to draw-axes ; turtles needed
-    ask turtles [
+    ask turtles
+  [
+      set pen-size 2
       setxy 0 0 pd
       set ycor max-pycor pu
       stamp
@@ -180,22 +367,28 @@ end
       set xcor min-pxcor pu
       rt 90
       stamp
-    ]
+  ]
   end
 
+  ; draw marks on the axes and label "x" "y": number of labels on each axis, length of each label
   to label-axes [num len] ; turtles needed
-  ask patch (max-pxcor - 1) 1 [
+  ask patch (max-pxcor - 1) 1
+  [
     set plabel "x"
   ]
-  ask patch 1 (max-pycor) [
+  ask patch 1 (max-pycor)
+  [
     set plabel "y"
   ]
 
-  ask turtles [
+  ask turtles
+  [
+    set pen-size 1
     setxy 0 0
     let interval (max-pxcor / (num + 1))
     let one-side [ -> repeat num [fd interval lt 90 fd len pd bk (len * 2) pu fd len rt 90]]
-    repeat 4 [
+    repeat 4
+    [
       setxy 0 0
       rt 90
       run one-side
@@ -203,21 +396,49 @@ end
   ]
 end
 
-to label-xy [x y]
-  ask patch (max-pxcor - 1) -1 [
+; label xy max and min: x, y
+to label-bounds [x y]
+
+  ask patch (max-pxcor - 1) -1
+  [
     set plabel word "max: " x
   ]
-  ask patch (min-pxcor + 4) -1 [
+  ask patch (min-pxcor + 4) -1
+  [
     set plabel word "min: -" x
   ]
-  ask patch -1 (max-pycor) [
+  ask patch -1 (max-pycor)
+  [
     set plabel word "max: " y
   ]
-  ask patch -1 (min-pycor + 1) [
+  ask patch -1 (min-pycor + 1)
+  [
     set plabel word "min: -" y
   ]
 
 end
+
+; setup output area
+to output.setup
+  clear-output
+  output-print "Graphed Equations:"
+end
+
+; format and print all equations in "equations" to output area
+to output.print-equations
+  if empty? equations [ stop ]
+  let output-list (map [equation -> (word ((position equation equations) + 1) ": y = " equation "\n") ] equations)
+  let output-str (reduce [ [ prev next ] -> word prev next ] output-list)
+  output-type output-str
+end
+
+; print the last graphed equation to output area
+to output.print-last
+  let equation last equations
+  output-type (word (length equations) ": y = " equation "\n")
+end
+
+
 @#$#@#$#@
 GRAPHICS-WINDOW
 31
@@ -249,7 +470,7 @@ ticks
 BUTTON
 571
 534
-739
+653
 567
 update axes
 update-axes
@@ -266,7 +487,7 @@ NIL
 SLIDER
 574
 294
-1215
+948
 327
 x-max
 x-max
@@ -281,7 +502,7 @@ HORIZONTAL
 SLIDER
 574
 332
-1216
+950
 365
 y-max
 y-max
@@ -324,10 +545,10 @@ NIL
 HORIZONTAL
 
 BUTTON
-656
-39
-741
-72
+655
+41
+740
+74
 reset all
 reset-all
 NIL
@@ -338,26 +559,26 @@ NIL
 NIL
 NIL
 NIL
-1
+0
 
 INPUTBOX
 574
 113
-1136
+953
 173
-expression
+y=
 NIL
 1
 0
 String (reporter)
 
 BUTTON
-764
-179
-894
-212
-NIL
-graph
+574
+219
+704
+252
+add graph
+add-graph
 NIL
 1
 T
@@ -369,11 +590,11 @@ NIL
 0
 
 BUTTON
-728
-222
-852
-255
-clear wnidow
+1027
+424
+1120
+457
+clear all graphs
 clear-window
 NIL
 1
@@ -386,12 +607,12 @@ NIL
 0
 
 BUTTON
-574
-222
-721
-255
-clear and then graph
-clear-window\ngraph
+719
+221
+882
+254
+clear window and graph
+clear-window\nadd-graph
 NIL
 1
 T
@@ -403,29 +624,12 @@ NIL
 0
 
 BUTTON
-799
+574
 371
-949
+676
 404
 update window
 update-window
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-0
-
-BUTTON
-573
-371
-792
-404
-update window and graph
-update-window\ngraph
 NIL
 1
 T
@@ -507,6 +711,122 @@ NIL
 NIL
 NIL
 1
+
+BUTTON
+655
+534
+745
+567
+reset axes
+reset-axes
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+OUTPUT
+1013
+40
+1307
+349
+11
+
+BUTTON
+1027
+378
+1179
+411
+remove equation of #
+remove-equation
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+INPUTBOX
+1196
+352
+1270
+412
+equation#
+0.0
+1
+0
+Number
+
+TEXTBOX
+774
+377
+924
+405
+Show coordinates of cursor\n(On mousedown)
+11
+0.0
+1
+
+SWITCH
+772
+447
+946
+480
+show-closest-graph?
+show-closest-graph?
+1
+1
+-1000
+
+SWITCH
+772
+410
+946
+443
+show-coordinates?
+show-coordinates?
+0
+1
+-1000
+
+BUTTON
+776
+535
+939
+568
+show
+show-coordinates
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+SLIDER
+772
+496
+969
+529
+coordinate-precision
+coordinate-precision
+0
+10
+0.0
+1
+1
+dec. places
+HORIZONTAL
 
 @#$#@#$#@
 ## THIS IS A PART OF THE LARGER PROJECT. IT IS ***INCOMPLETE***
