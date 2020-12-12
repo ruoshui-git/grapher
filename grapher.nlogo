@@ -15,10 +15,10 @@
   ; code cleanup, organize more into MVC, perhaps?
   ; implement mouse-down pt report
   ; Change line color for new graph
-  ; Display error message in Output and BEEP
 
 ;DONE:
-  ;Align open brackets and close brackets
+  ; Align open brackets and close brackets
+  ; Display error message in Output and BEEP
 
 
 ; model
@@ -48,7 +48,10 @@ to reset-all
   set y-max max-pycor
   set graphing-speed 100
   set y= ""
-  set equations []
+  set coordinate-precision 2
+  ; equations reset in setup
+
+  ; initialize model again
   setup
 end
 
@@ -104,7 +107,18 @@ to equations.graph-all
   foreach functions graph-function
 end
 
+;
+to-report get-closest-graph [x y]
+  let functions map modify equations
+  let results map [func -> (runresult func x)] functions
+  let distances map [val -> (abs val) - y] results
+  report position (min distances) distances
+end
+
+
 ; controllers - what buttons should access ONLY
+
+to separate-comments end
 
 ; setup the axes, enable other options, initialize "equations" to empty list
 to setup
@@ -132,14 +146,19 @@ to add-graph
     let function (modify y=)
     graph-function function
     equations.add y=
-    output.print-last
+    output.setup
+    output.print-equations
     set equation# length equations
   ]
   ; catch error
   [
+    output.setup
+    output.print-equations
     ; user-message (word "The graph of y = " y= " is not added. The following error has occurred: " error-message " Check equation input to make sure all syntax is correct.")
-    print error-message
-    print "Check the equation input to make sure all syntax are correct"
+    output.print-message "Graphing stopped because of error:"
+    output.print-message word " - " error-message
+    output.print-message "Check the equation input to make sure all \nsyntax are correct."
+    beep
   ]
 end
 
@@ -193,20 +212,20 @@ to show-coordinates
         setxy mouse-xcor mouse-ycor
         ifelse show-coordinates? and show-closest-graph?
         [
-          set label (word "(" precision (mouse-xcor * x-factor) coordinate-precision ", " precision (mouse-ycor * y-factor) coordinate-precision ")")
+          view-coordinates 2
         ]
         [
           ifelse show-coordinates?
           [
-            set label (word "(" precision (mouse-xcor * x-factor) coordinate-precision ", " precision (mouse-ycor * y-factor) coordinate-precision ")")
+            view-coordinates 0
           ]
           [
             ifelse show-closest-graph?
             [
-
+              view-coordinates 1
             ]
             [
-              set label ""
+              view-coordinates 3
             ]
           ]
         ]
@@ -438,6 +457,38 @@ to output.print-last
   output-type (word (length equations) ": y = " equation "\n")
 end
 
+; a wrapper for "output-print"
+to output.print-message [msg]
+  output-print msg
+end
+
+to view-coordinates [ opt ] ; turtle with shape "x" needed
+  ; clear
+  if opt = 0
+  [
+    set label (word "(" precision (mouse-xcor * x-factor) coordinate-precision ", " precision (mouse-ycor * y-factor) coordinate-precision ")")
+  ]
+
+  ; graph only
+  if opt = 1
+  [
+    set label (
+    (word "closest graph: " get-closest-graph mouse-xcor mouse-ycor)
+    )
+  ]
+
+  ; coordinate and graph
+  if opt = 2
+  [
+
+  ]
+
+  ; clear
+  if opt = 3
+  [
+    set label ""
+  ]
+end
 
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -454,8 +505,8 @@ GRAPHICS-WINDOW
 1
 1
 0
-1
-1
+0
+0
 1
 -20
 20
@@ -491,9 +542,9 @@ SLIDER
 327
 x-max
 x-max
-10
+0.1
 100
-20.0
+3.7
 0.1
 1
 NIL
@@ -506,9 +557,9 @@ SLIDER
 365
 y-max
 y-max
-10
+0.1
 100
-20.0
+5.3
 0.1
 1
 NIL
@@ -567,7 +618,7 @@ INPUTBOX
 953
 173
 y=
-NIL
+tan (360 * 1 / x)
 1
 0
 String (reporter)
@@ -730,10 +781,10 @@ NIL
 0
 
 OUTPUT
-1013
-40
-1307
-349
+995
+37
+1316
+346
 11
 
 BUTTON
@@ -759,7 +810,7 @@ INPUTBOX
 1270
 412
 equation#
-0.0
+1.0
 1
 0
 Number
@@ -822,7 +873,7 @@ coordinate-precision
 coordinate-precision
 0
 10
-0.0
+2.0
 1
 1
 dec. places
@@ -1180,7 +1231,7 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 6.0.1
+NetLogo 6.0.4
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
