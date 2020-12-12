@@ -1,23 +1,27 @@
 ; global variables declared with sliders:
-; =0
 ; number-of-labels label-length
 ; x-max y-max
 ; graphing-speed
 
 ; declared with inputs:
-;
+; y=
 ; eqaution#
 
 ; declared with swiches:
 ; show-coordinates?
+; show-closest-equation?
 
 ;TODOs:
+  ; code cleanup, organize more into MVC, perhaps?
+  ; implement mouse-down pt report
   ; Change line color for new graph
 
+;DONE:
+  ; Align open brackets and close brackets
+  ; Display error message in Output and BEEP
 
-;;
-;; model
-;;
+
+; model
 
 globals
 [
@@ -36,21 +40,14 @@ globals
 
 ]
 
-patches-own
-[
-  ;; for window size
-  wxcor wycor
-  ;; for graphing
-  wzcor
-]
-
 ; reset all parameters
 to reset-all
   set number-of-labels 15
   set label-length 0.3
   set x-max max-pxcor
   set y-max max-pycor
-  set =0 ""
+  set graphing-speed 100
+  set y= ""
   set coordinate-precision 2
   ; equations reset in setup
 
@@ -60,7 +57,7 @@ end
 
 ; modify user input for graphing
 to-report modify [str]
-  let reporter-str (word "[ [x y] -> " str " ]")
+  let reporter-str (word "[ x -> " str " ]")
   print reporter-str
   report (runresult reporter-str)
 end
@@ -107,7 +104,7 @@ end
 to equations.graph-all
   if equations = 0 or empty? equations [ stop ]
   let functions (map modify equations)
-  foreach functions graph-implicit
+  foreach functions graph-function
 end
 
 ;
@@ -118,9 +115,8 @@ to-report get-closest-graph [x y]
   report position (min distances) distances
 end
 
-;;
-;; controllers - what buttons should access ONLY
-;;
+
+; controllers - what buttons should access ONLY
 
 to separate-comments end
 
@@ -134,34 +130,31 @@ to setup
   set equation# 0
 
   set show-coordinates? true
+  set show-closest-graph? false
   reset-ticks
 end
 
-; graph equation in "=0"
-; calls: equations.exist?, equations.add, graph-implicit, modify, output.print-last
+; graph equation in "y="
+; calls: equations.exist?, equations.add, graph-function, modify, output.print-last
 to add-graph
-  if =0 = "" [ stop ]
-  if equations.exist? =0 [ stop ]
-
-
+  if y= = "" [ stop ]
+  if equations.exist? y= [ stop ]
 
   ; catch user error or division by 0
   carefully
   [
-    let implicit (modify =0)
-    graph-implicit implicit
-    equations.add =0
+    let function (modify y=)
+    graph-function function
+    equations.add y=
     output.setup
     output.print-equations
     set equation# length equations
-
-
   ]
   ; catch error
   [
     output.setup
     output.print-equations
-    ; user-message (word "The graph of y = " =0 " is not added. The following error has occurred: " error-message " Check equation input to make sure all syntax is correct.")
+    ; user-message (word "The graph of y = " y= " is not added. The following error has occurred: " error-message " Check equation input to make sure all syntax is correct.")
     output.print-message "Graphing stopped because of error:"
     output.print-message word " - " error-message
     output.print-message "Check the equation input to make sure all \nsyntax are correct."
@@ -210,33 +203,116 @@ end
 
 ; (forever button needed) show the coordinates/closest graph of current mouse position
 to show-coordinates
-  ;;TODO: implement show-coordinates
+  ifelse mouse-down? and mouse-inside?
+  [
+    ifelse count turtles with [ shape = "x" ] = 1
+    [
+      ask turtles with [ shape = "x" ]
+      [
+        setxy mouse-xcor mouse-ycor
+        ifelse show-coordinates? and show-closest-graph?
+        [
+          view-coordinates 2
+        ]
+        [
+          ifelse show-coordinates?
+          [
+            view-coordinates 0
+          ]
+          [
+            ifelse show-closest-graph?
+            [
+              view-coordinates 1
+            ]
+            [
+              view-coordinates 3
+            ]
+          ]
+        ]
+      ]
+    ]
+    [
+      ask turtles with [shape = "x"]
+      [
+        die
+      ]
+      cro 1
+      [
+        set shape "x"
+        set size 0.5
+        set color red
+      ]
+    ]
+  ]
+  [
+    ask turtles with [ shape = "x" ]
+    [
+      die
+    ]
+  ]
 end
 
 
 ; graph the given equation: function (as anonymous reporter)
-to graph-implicit [ equation ]
+to graph-function [ func ]
 
-  ;; compute and store height to the surface
-  ask patches
+  ; create the graphing agent
+  cro 1
   [
-    set wzcor (runresult equation pxcor pycor)
+    set hidden? true
+    set color pink
+    set shape "dot"
+    set size 0.3
   ]
 
-  ;; for points that intercept the surface, or likely so, compute graph
-  ask patches with [abs wzcor < implicit-graph-tolerance]
-  [
-    compute-graph
-  ]
+  ; initialize x y
+  let x (-1 * cur-x-max)
+  let y (runresult func x)
 
-  ask patches
+  ask turtles with [shape = "dot"]
   [
-    let val round (runresult equation pxcor pycor)
-    ;if val < 3 and val > -3
-    if abs val < implicit-graph-tolerance
+
+    ; var to keep track of whether just graphed (because of boundary issues)
+    ; make sure turtle produce the correct graph when the last point is out of bound
+    let graphed false
+
+    ; graph from left to right
+    while [x < cur-x-max]
     [
-      set pcolor pink
+
+      ; plot if y is not outside of boundary
+      ifelse (abs y) <= cur-y-max
+      [
+        ifelse graphed
+        [
+          pd
+          setxy x / x-factor y / y-factor
+          stamp
+          pu
+        ]
+        [
+          ; makes sure to not connect the last point if it was outside of boundary
+          setxy x / x-factor y / y-factor
+          stamp
+          set graphed true
+        ]
+      ]
+      [
+        set graphed false
+      ]
+
+      ; update x y
+      set x (x + 0.01)
+      set y (runresult func x)
+
+      ; graphing speed
+      if graphing-speed != 100
+      [
+        wait 0.01 / (graphing-speed)
+      ]
     ]
+
+    die
   ]
   tick
 end
@@ -253,17 +329,11 @@ to remove-function [ index ]
   equations.graph-all
 end
 
-;;
-;; view
-;;
 
-;; patch procedure
-to compute-graph
-  neighbors
-end
+; view
 
 ; clear all drawings and agents
-; calls: output.setup, equations.remove-all
+; calls: output.seup, equations.remove-all
 to clear-view
   cd
   ask turtles [die]
@@ -376,7 +446,7 @@ end
 ; format and print all equations in "equations" to output area
 to output.print-equations
   if empty? equations [ stop ]
-  let output-list (map [equation -> (word ((position equation equations) + 1) ": 0 = " equation "\n") ] equations)
+  let output-list (map [equation -> (word ((position equation equations) + 1) ": y = " equation "\n") ] equations)
   let output-str (reduce [ [ prev next ] -> word prev next ] output-list)
   output-type output-str
 end
@@ -384,7 +454,7 @@ end
 ; print the last graphed equation to output area
 to output.print-last
   let equation last equations
-  output-type (word (length equations) ": 0 = " equation "\n")
+  output-type (word (length equations) ": y = " equation "\n")
 end
 
 ; a wrapper for "output-print"
@@ -419,15 +489,16 @@ to view-coordinates [ opt ] ; turtle with shape "x" needed
     set label ""
   ]
 end
+
 @#$#@#$#@
 GRAPHICS-WINDOW
 31
 10
-540
-520
+522
+502
 -1
 -1
-1.0
+11.8
 1
 11
 1
@@ -437,12 +508,12 @@ GRAPHICS-WINDOW
 0
 0
 1
--250
-250
--250
-250
-1
-1
+-20
+20
+-20
+20
+0
+0
 1
 ticks
 30.0
@@ -473,7 +544,7 @@ x-max
 x-max
 0.1
 100
-98.9
+3.7
 0.1
 1
 NIL
@@ -488,7 +559,7 @@ y-max
 y-max
 0.1
 100
-99.4
+5.3
 0.1
 1
 NIL
@@ -544,10 +615,10 @@ NIL
 INPUTBOX
 574
 113
-1072
+953
 173
-=0
-5 * (abs x - 100) ^ 2 + (abs y - 50) ^ 2 - 1000
+y=
+tan (360 * 1 / x)
 1
 0
 String (reporter)
@@ -570,10 +641,10 @@ NIL
 0
 
 BUTTON
-1023
-374
-1116
-407
+1027
+424
+1120
+457
 clear all graphs
 clear-window
 NIL
@@ -650,6 +721,21 @@ Window
 0.0
 1
 
+SLIDER
+574
+180
+746
+213
+graphing-speed
+graphing-speed
+1
+100
+100.0
+1
+1
+NIL
+HORIZONTAL
+
 TEXTBOX
 575
 14
@@ -695,17 +781,17 @@ NIL
 0
 
 OUTPUT
-1085
-10
-1406
-319
+995
+37
+1316
+346
 11
 
 BUTTON
-1023
-328
-1175
-361
+1027
+378
+1179
+411
 remove equation of #
 remove-equation
 NIL
@@ -719,10 +805,10 @@ NIL
 0
 
 INPUTBOX
-1193
-327
-1267
-387
+1196
+352
+1270
+412
 equation#
 1.0
 1
@@ -738,6 +824,17 @@ Show coordinates of cursor\n(On mousedown)
 11
 0.0
 1
+
+SWITCH
+772
+447
+946
+480
+show-closest-graph?
+show-closest-graph?
+1
+1
+-1000
 
 SWITCH
 772
@@ -780,21 +877,6 @@ coordinate-precision
 1
 1
 dec. places
-HORIZONTAL
-
-SLIDER
-1031
-426
-1210
-459
-implicit-graph-tolerance
-implicit-graph-tolerance
-1
-500
-75.0
-1
-1
-NIL
 HORIZONTAL
 
 @#$#@#$#@
