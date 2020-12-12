@@ -1,18 +1,22 @@
-; global variables declared with sliders:
-; =0
-; number-of-labels label-length
-; x-max y-max
-; graphing-speed
+;;
+;; global variables declared with sliders:
+;;  coordinate-precision
+;;  a b c
+;;
+;; declared with inputs:
+;;  =0
+;;  eqaution#
+;;  zoom-factor
+;;  graph-color axes-color background-color
+;;  a,b,c-min,increment,max
 
-; declared with inputs:
-;
-; eqaution#
+;; declared with swiches:
+;;  show-axes?
 
-; declared with swiches:
-; show-coordinates?
-
-;TODOs:
+;; TODOs:
   ; Change line color for new graph
+;;  Make "detect change" functional
+;;  Optimize move-window, and possibly, zooming
 
 
 ;;
@@ -25,14 +29,37 @@ globals
   cur-num-labels
   cur-label-length
 
-  ; for internal grid system
-  x-factor
-  y-factor
-
   ; keep track of graphed equations
   equations
 
-  slider-min1 slider-max1
+
+  slider-max1 slider-min1
+
+  ;; grid system
+  wx-max wx-min wy-max wy-min
+  ;; default window size
+  DEFAULT-X DEFAULT-Y
+
+  ;; moving window
+  was-mouse-down?
+  init-pt final-pt
+
+  ;; showing coordinate
+  coordinate
+  showing-coordinate?
+
+  ;; for changing window color
+  old-background-color
+  old-graph-color
+  old-axes-color
+
+  ;; for constant sliders
+  f-a-min f-a-increment f-a-max
+  f-b-min f-b-increment f-b-max
+  f-c-min f-c-increment f-c-max
+
+  ;; for detecting change; "o" stands for "old"
+  old-a old-b old-c
 ]
 
 patches-own
@@ -41,17 +68,31 @@ patches-own
   wxcor wycor
   ;; for graphing
   wzcor on-graph?
+
+  ;; for labeling
+  is-label?
+
+  ;; for moveing window
+  f-wxcor f-wycor f-pcolor was-in-window?
 ]
+
+breed [points point]
 
 ; reset all parameters
 to reset-all
-  set number-of-labels 15
-  set label-length 0.3
-  set x-max max-pxcor
-  set y-max max-pycor
   set =0 ""
+  set show-axes? true
   set coordinate-precision 2
+  set zoom-factor 2
+  set axes-color 3
+  set graph-color pink
+  set background-color black
   ; equations reset in setup
+
+  ;; set constant sliders
+  set a-min -50 set a-increment 1 set a-max 50 set a 0
+  set b-min -50 set b-increment 1 set b-max 50 set b 0
+  set c-min -50 set c-increment 1 set c-max 50 set c 0
 
   ; initialize model again
   setup
@@ -59,25 +100,61 @@ end
 
 ; modify user input for graphing
 to-report modify [str]
+  if position "x" str = false
+  and position "y" str = false
+  [
+    error "Include at least 1 variable in equation (x or y)  "
+  ]
   let reporter-str (word "[ [x y] -> " str " ]")
-  print reporter-str
   report (runresult reporter-str)
 end
 
-; set the internal grid system and update the view
-to set-grid [new-x-max new-y-max]
+;; set the internal grid system
+;; does NOT update the view
+to set-grid [new-x-max new-x-min new-y-max new-y-min]
 
-  ; set internal grid system
-  set x-factor (new-x-max / max-pxcor)
-  set y-factor (new-y-max / max-pycor)
+  let x-diff abs (new-x-max - new-x-min)
+  let y-diff abs (new-y-max - new-y-min)
 
-  label-bounds new-x-max new-y-max
+  let x-factor (x-diff / (max-pxcor * 2))
+  let y-factor (y-diff / (max-pycor * 2))
+
+  label-bounds new-x-max new-x-min new-y-max new-y-min
 
   ask patches
   [
-    set wxcor x-factor * pxcor
-    set wycor y-factor * pycor
+    set wxcor (pxcor + max-pxcor) * x-factor + new-x-min
+    set wycor (pycor + max-pycor) * y-factor + new-y-min
   ]
+
+  set wx-max new-x-max
+  set wx-min new-x-min
+  set wy-max new-y-max
+  set wy-min new-y-min
+end
+
+;; set the internal grid system, only with selected patches (pixels)
+;; does NOT update the view
+to set-grid-with [pixels new-x-max new-x-min new-y-max new-y-min]
+
+  let x-diff abs (new-x-max - new-x-min)
+  let y-diff abs (new-y-max - new-y-min)
+
+  let x-factor (x-diff / (max-pxcor * 2))
+  let y-factor (y-diff / (max-pycor * 2))
+
+  label-bounds new-x-max new-x-min new-y-max new-y-min
+
+  ask pixels
+  [
+    set wxcor (pxcor + max-pxcor) * x-factor + new-x-min
+    set wycor (pycor + max-pycor) * y-factor + new-y-min
+  ]
+
+  set wx-max new-x-max
+  set wx-min new-x-min
+  set wy-max new-y-max
+  set wy-min new-y-min
 end
 
 to-report equations.exist? [ y ]
@@ -85,19 +162,13 @@ to-report equations.exist? [ y ]
 end
 
 ; add equation to "equations"
-to equations.add [ y ]
-  set equations lput y equations
+to equations.add [ equation ]
+  set equations lput equation equations
 end
 
 ; remove equation from "equations"
-to equations.remove [ y ]
-  ifelse is-number? y
-  [
-    set equations remove-item (y - 1) equations
-  ]
-  [
-    set equations remove y equations
-  ]
+to equations.remove [ index ]
+  set equations remove-item (index - 1) equations
 end
 
 ; remove all equations from "equations"
@@ -110,16 +181,26 @@ to equations.graph-all
   if equations = 0 or empty? equations [ stop ]
   let implicit-equations (map modify equations)
   foreach implicit-equations graph-implicit
+  tick
 end
 
-;
-to-report get-closest-graph [x y]
-  let functions map modify equations
-  let results map [func -> (runresult func x)] functions
-  let distances map [val -> (abs val) - y] results
-  report position (min distances) distances
+to equations.carefully.graph-all
+  carefully
+  [
+    if equations = 0 or empty? equations [ stop ]
+    let implicit-equations (map modify equations)
+    foreach implicit-equations graph-implicit
+  ]
+  [
+    output.setup
+    output.print-equations
+    ; user-message (word "The graph of y = " =0 " is not added. The following error has occurred: " error-message " Check equation input to make sure all syntax is correct.")
+    output.print-message "-----------------------------------------\nGraphing stopped because of error:"
+    output.print-message word " - " error-message
+    output.print-message "Check the equation input to make sure all \nsyntax are correct."
+    beep
+  ]
 end
-
 ;;
 ;; controllers - what buttons should access ONLY
 ;;
@@ -129,17 +210,32 @@ to separate-comments end
 ; setup the axes, enable other options, initialize "equations" to empty list
 to setup
   ca
-  set equations []
-
-;  update-axes
-
-  set-grid x-max y-max
-  output.setup
-  set equation# 0
-
-
-  set show-coordinates? true
   reset-ticks
+
+
+  set equations []
+  set DEFAULT-X 10
+  set DEFAULT-Y 10
+  set equation# 0
+  set was-mouse-down? false
+  set showing-coordinate? false
+  set coordinate nobody
+  set-default-shape points "dot"
+  set old-graph-color graph-color
+  set old-axes-color axes-color
+  set old-background-color background-color
+  update-constant-sliders
+
+  ;; set internal grid-system
+  zoom "reset" 0
+
+  clear-view
+  update-window-colors
+
+
+  set old-a a
+  set old-b b
+  set old-c c
 end
 
 ; graph equation in "=0"
@@ -148,7 +244,7 @@ to add-graph
   if =0 = "" [ stop ]
   if equations.exist? =0 [ stop ]
 
-  ; catch user error or division by 0
+  ; catch user error or other predefined workarounds (division by 0, sqrt of a negative, etc)
   carefully
   [
     let implicit-equation (modify =0)
@@ -157,13 +253,14 @@ to add-graph
     output.setup
     output.print-equations
     set equation# length equations
+    tick
   ]
   ; catch error
   [
     output.setup
     output.print-equations
     ; user-message (word "The graph of y = " =0 " is not added. The following error has occurred: " error-message " Check equation input to make sure all syntax is correct.")
-    output.print-message "Graphing stopped because of error:"
+    output.print-message "-----------------------------------------\nGraphing stopped because of error:"
     output.print-message word " - " error-message
     output.print-message "Check the equation input to make sure all \nsyntax are correct."
     beep
@@ -172,116 +269,321 @@ end
 
 ; clear all graphs and update internal grid
 ; calls: set-grid [], setup-guides [], equations.graph-all
-to update-window
-  cp
-  set-grid x-max y-max
-;  setup-guides cur-num-labels cur-label-length
-  equations.graph-all
-end
 
-; clear the window, setup the view of axes
-; calls: clear-window, setup-guides []
-to update-axes
-  cd
-  setup-guides number-of-labels label-length
-  equations.graph-all
-end
-
-; clear all graphs: clear all drawings and redraw the axes and labels
-; calls: clear-view, setup-guides []
+; clear all graphs: clear all patch colors and redraw the axes
+; calls: draw-axes
 to clear-window
-  clear-view
-;  setup-guides cur-num-labels cur-label-length
+  ask patches
+  [ set pcolor background-color]
+  draw-axes
 end
 
 ; clear window and graph
 to clear-window-graph
-  clear-window
+  clear-view
   add-graph
 end
 
-; reset-axes-labels
-; calls: clear-view, setup-guides []
-to reset-axes
-  set number-of-labels 15
-  set label-length 0.3
+to clear-all-graphs
   clear-view
-  setup-guides number-of-labels label-length
+  set equation# 0
+end
+
+to update-window-colors
+  if graph-color = background-color
+  or background-color = axes-color
+  or axes-color = graph-color
+  [
+    user-message "Please select different colors"
+    clear-ticks
+    stop
+  ]
+  ask patches
+  [
+    if pcolor = old-graph-color
+    [
+      set pcolor graph-color
+    ]
+    if pcolor = old-background-color
+    [
+      set pcolor background-color
+    ]
+    if pcolor = old-axes-color
+    [
+      set pcolor axes-color
+    ]
+  ]
+  set old-graph-color graph-color
+  set old-axes-color axes-color
+  set old-background-color background-color
+end
+
+to update-constant-sliders
+  set f-a-min a-min set f-a-increment a-increment set f-a-max a-max
+  set f-b-min b-min set f-b-increment b-increment set f-b-max b-max
+  set f-c-min c-min set f-c-increment c-increment set f-c-max c-max
+end
+
+to detect-change
+  every 0.5
+  [
+    if a != old-a or b != old-b or c != old-c
+    [
+      clear-window
+      equations.carefully.graph-all
+      tick
+      output.setup
+      output.print-equations
+      set old-a a
+      set old-b b
+      set old-c c
+    ]
+  ]
+end
+
+to update-window-with-constants
+  if a != old-a or b != old-b or c != old-c
+  [
+    clear-window
+    equations.carefully.graph-all
+    tick
+    output.setup
+    output.print-equations
+    set old-a a
+    set old-b b
+    set old-c c
+  ]
 end
 
 ; remove the equation that "equation#" is pointing to
 ; calls: remove-equation
 to button.remove-equation
   remove-equation equation#
+  clear-window
+  equations.graph-all
 end
 
-; (forever button needed) show the coordinates/closest graph of current mouse position
+to zoom-in
+  zoom "in" zoom-factor
+end
+
+to zoom-out
+  zoom "out" zoom-factor
+end
+
+to zoom-center
+  zoom "center" zoom-factor
+end
+
+to zoom-reset
+  zoom "reset" zoom-factor
+end
+
+;; move window based on user interaction
+to move-window
+  if mouse-inside?
+  [
+    let is-mouse-down? mouse-down?
+    if is-mouse-down? and not was-mouse-down?
+    [
+      ;; on mouse-down, initialize
+      create-points 1
+      [
+        setxy mouse-xcor mouse-ycor
+        set size 10
+        set color green
+        set init-pt self
+        set label (word "(" precision wxcor coordinate-precision "," precision wycor coordinate-precision ")")
+      ]
+      create-points 1
+      [
+        setxy mouse-xcor mouse-ycor
+        set size 10
+        set color red
+        set final-pt self
+        create-link-from init-pt
+      ]
+
+    ]
+    if is-mouse-down? and was-mouse-down?
+    [
+      ;; on drag, make final-pt follow mouse
+      ask final-pt
+      [
+        setxy mouse-xcor mouse-ycor
+        ifelse not showing-coordinate?
+        [
+          set label (word "(" precision wxcor coordinate-precision "," precision wycor coordinate-precision ")")
+        ]
+        [
+          set label ""
+        ]
+      ]
+    ]
+    if not is-mouse-down? and was-mouse-down?
+    [
+      ;; on release, move window according to the patches
+      if init-pt != final-pt
+      [
+        move (patch [xcor] of init-pt [ycor] of init-pt) (patch [xcor] of final-pt [ycor] of final-pt)
+      ]
+      ask (turtle-set init-pt final-pt)
+      [ die ]
+    ]
+    set was-mouse-down? is-mouse-down?
+    tick
+  ]
+end
+
+;; (forever button needed) show the coordinates/closest graph of current mouse position
 to show-coordinates
-  ;;TODO: implement show-coordinates
+  ifelse mouse-down?
+  [
+    set showing-coordinate? true
+    ifelse coordinate != nobody
+    [
+      ask coordinate
+      [
+        setxy mouse-xcor mouse-ycor
+        set label (word "(" precision wxcor coordinate-precision "," precision wycor coordinate-precision ")")
+      ]
+      tick
+    ]
+    [
+      cro 1 [
+        set shape "x"
+        set coordinate self
+      ]
+    ]
+  ]
+  [
+    set showing-coordinate? false
+    if coordinate != nobody
+    [
+      ask coordinate
+      [
+        set label ""
+        die
+      ]
+    ]
+  ]
+
+  tick
 end
 
-
-; graph the given equation: function (as anonymous reporter)
+; graph the given equation: equation (as anonymous reporter)
 to graph-implicit [ equation ]
   ;; reset patches state
   ask patches
-  [ set on-graph? false]
+  [
+    set on-graph? false
+  ]
 
   ;; compute and store height to the surface
   ask patches
   [
-    set wzcor (runresult equation wxcor wycor)
+    carefully
+  [
+      set wzcor (runresult equation wxcor wycor)
+    ]
+    [
+      ;; catch any error by Netlogo's system
+      if position "imaginary number" error-message != false
+      or error-message = "Division by zero."
+      or error-message = "math operation produced a non-number"
+      or position "Can't take logarithm of " error-message != false
+      [
+        set wzcor false
+      ]
+      ;; the else condition, bubble up the user error
+      if wzcor != false
+      [
+        error error-message
+      ]
+    ]
   ]
 
-  ask patches
+  ;; graph all valid patches
+  ask patches with [wzcor != false]
   [
     ifelse wzcor = 0
     [ set on-graph? true]
     [
       if wzcor > 0
       [
-        if any? neighbors with [ wzcor < 0 ]
+        if any? neighbors with [ wzcor != false and wzcor < 0 ]
         [ set on-graph? true ]
       ]
     ]
   ]
 
   ask patches with [on-graph?]
-  [ set pcolor pink ]
+  [ set pcolor graph-color ]
 
-;  ;; for points that intercept the surface, or likely so, compute graph
-;  ask patches with [abs wzcor < implicit-graph-tolerance]
-;  [
-;    compute-graph
-;  ]
-;
-;  ;; graph pts that are on graph
-;  ask patches with [on-graph?]
-;  [
-;    set pcolor pink
-;  ]
-
-;  ask patches
-;  [
-;    let val round (runresult equation pxcor pycor)
-;    ;if val < 3 and val > -3
-;    if abs val < implicit-graph-tolerance
-;    [
-;      set pcolor pink
-;    ]
-;  ]
-  tick
 end
 
-; remove a function: index
+;; compute graph on certain patches, not
+;; param: equation
+;; param: pixels, the patches to graph
+to graph-implicit-with [ equation pixels ]
+    ;; reset patches state
+  ask pixels
+  [
+    set on-graph? false
+    set wzcor false
+  ]
+
+  ;; compute and store height to the surface, only for given patches
+  ask pixels
+  [
+    carefully
+  [
+      set wzcor (runresult equation wxcor wycor)
+    ]
+    [
+      ;; catch any error by Netlogo's system
+      if position "imaginary number" error-message != false
+      or error-message = "Division by zero."
+      or error-message = "math operation produced a non-number"
+      or position "Can't take logarithm of " error-message != false
+      [
+        set wzcor false
+      ]
+      ;; the else condition, bubble up the user error
+      if wzcor != false
+      [
+        error error-message
+      ]
+    ]
+  ]
+
+  ;; graph all valid patches
+  ask pixels with [wzcor != false]
+  [
+    ifelse wzcor = 0
+    [ set on-graph? true]
+    [
+      if wzcor > 0
+      [
+        if any? neighbors with [ wzcor != false and wzcor < 0 ]
+        [ set on-graph? true ]
+      ]
+    ]
+  ]
+
+  ask pixels with [on-graph?]
+  [ set pcolor pink ]
+end
+
+; remove an equation: index
 to remove-equation [ index ]
-  if index > length equations [ stop ]
-  if index = 0 [ stop ]
+  if index > length equations or index = 0
+  [ stop ]
   equations.remove index
   output.setup
   output.print-equations
   set equation# length equations
-  update-window
+;  update-window
   equations.graph-all
 end
 
@@ -289,111 +591,198 @@ end
 ;; view
 ;;
 
-;; clear all drawings and agents
+;; clear all graphes, axes
 ;; calls: output.setup, equations.remove-all
 to clear-view
   ; this will reset patch colors
-  ; don't use "cp", since it would reset the x y values
+  ; don't use "cp", since it would reset the wxcor wycor values
   ask patches
-  [ set pcolor black ]
+  [ set pcolor background-color ]
+  draw-axes
+  tick
   output.setup
   equations.remove-all
 end
 
-; draw labels (marks on axes): number of labels, length of each label
-; calls: draw-axes, label-axes[num-label len]
-to setup-guides [num-label len]
-  cro 1
-  [
-    set hidden? true
-    set color 4
-  ]
-
-  draw-axes
-  label-axes num-label len
-
-  ; retain latest setting - to be used by clear-window
-  set cur-num-labels num-label
-  set cur-label-length len
-
-  ask turtles
-  [
-    die
-  ]
-end
-
-  ; draw four plane axes with arrows on each end
-  to draw-axes ; turtles needed
-    ask turtles
-  [
-      set pen-size 2
-      setxy 0 0 pd
-      set ycor max-pycor pu
-      stamp
-
-      setxy 0 0 pd
-      set xcor max-pxcor pu
-      rt 90
-      stamp
-
-      setxy 0 0 pd
-      set ycor min-pycor pu
-      rt 90
-      stamp
-
-      setxy 0 0 pd
-      set xcor min-pxcor pu
-      rt 90
-      stamp
-  ]
-  end
-
-  ; draw marks on the axes and label "x" "y": number of labels on each axis, length of each label
-  to label-axes [num len] ; turtles needed
-  ask patch (max-pxcor - 1) 1
-  [
-    set plabel "x"
-  ]
-  ask patch 1 (max-pycor)
-  [
-    set plabel "y"
-  ]
-
-  ask turtles
-  [
-    set pen-size 1
-    setxy 0 0
-    let interval (max-pxcor / (num + 1))
-    let one-side [ -> repeat num [fd interval lt 90 fd len pd bk (len * 2) pu fd len rt 90]]
-    repeat 4
-    [
-      setxy 0 0
-      rt 90
-      run one-side
-    ]
-  ]
-end
-
 ; label xy max and min: x, y
-to label-bounds [x y]
+to label-bounds [x-max x-min y-max y-min]
+  ask patches with [is-label? = true]
+  [
+    set plabel ""
+    set is-label? false
+  ]
 
+  ;; x-max
   ask patch (max-pxcor - 1) -1
   [
-    set plabel word "max: " x
-  ]
-  ask patch (min-pxcor + 4) -1
-  [
-    set plabel word "min: -" x
-  ]
-  ask patch -1 (max-pycor)
-  [
-    set plabel word "max: " y
-  ]
-  ask patch -1 (min-pycor + 1)
-  [
-    set plabel word "min: -" y
+    set plabel word "x max: " x-max
+    set is-label? true
   ]
 
+  let x-min-label word "x min: " x-min
+  ;; x-min
+  ask patch (min-pxcor + (length x-min-label) * 5) -1
+  [
+    set plabel x-min-label
+    set is-label? true
+  ]
+
+  ;; y-max
+  ask patch -1 (max-pycor - 10)
+  [
+    set plabel word "y max: " y-max
+    set is-label? true
+  ]
+
+  ;; y-min
+  ask patch -1 (min-pycor + 10)
+  [
+    set plabel word "y min: " y-min
+    set is-label? true
+  ]
+
+end
+
+to draw-axes
+  if not show-axes?
+  [ stop ]
+  if wx-max >= 0 and wx-min <= 0
+  [
+    ask patches with-min [abs wxcor]
+    [ set pcolor axes-color ]
+  ]
+  if wy-max >= 0 and wy-min <= 0
+  [
+    ask patches with-min [abs wycor]
+    [ set pcolor axes-color ]
+  ]
+
+end
+
+;; internal: zoom to a particular place or type
+to zoom [zoom-type factor]
+  ;; if reset, then don't care about factor
+  if zoom-type = "reset"
+  [
+    set-grid DEFAULT-X (- DEFAULT-X) DEFAULT-Y (- DEFAULT-Y)
+    clear-window
+    equations.graph-all
+    stop
+  ]
+  if factor <= 0
+  [
+    user-message "Please put in a positive scale factor"
+    stop
+  ]
+  ;; mouse inside, mouse as center
+  ifelse mouse-inside?
+  [
+    let mouse-patch patch mouse-xcor mouse-ycor
+    let px ([wxcor] of mouse-patch)
+    let py ([wycor] of mouse-patch)
+    if zoom-type = "in"
+    [
+      set-grid (wx-max - px) / factor + px
+      (wx-min - px) / factor + px
+      (wy-max - py) / factor + py
+      (wy-min - py) / factor + py
+    ]
+    if zoom-type = "out"
+    [
+      set-grid (wx-max - px) * factor + px
+      (wx-min - px) * factor + px
+      (wy-max - py) * factor + py
+      (wy-min - py) * factor + py
+    ]
+    if zoom-type = "center"
+    [
+      move (patch mouse-xcor mouse-ycor) (patch 0 0)
+    ]
+  ]
+  [
+    if zoom-type = "in"
+    [
+      set-grid wx-max / factor
+      wx-min / factor
+      wy-max / factor
+      wy-min / factor
+    ]
+    if zoom-type = "out"
+    [
+      set-grid wx-max * factor
+      wx-min * factor
+      wy-max * factor
+      wy-min * factor
+    ]
+  ]
+
+  ;; update window
+  clear-window
+  equations.graph-all
+end
+
+;; internal: move window based on initial patch and end patch
+;; use the optimized graph procedure
+to move [m-from m-to]
+  ;; store the distance of patches to look at
+  let move-px ([pxcor] of m-from - [pxcor] of m-to)
+  let move-py ([pycor] of m-from - [pycor] of m-to)
+
+  let move-wx ([wxcor] of m-from - [wxcor] of m-to)
+  let move-wy ([wycor] of m-from - [wycor] of m-to)
+
+;; attempt optimization
+;; look at the future patch
+;  ask patches
+;  [
+;    let f-patch (patch-at move-px move-py)
+;    ifelse f-patch != nobody
+;    [
+;      set f-pcolor [pcolor] of f-patch
+;      set f-wxcor [wxcor] of f-patch
+;      set f-wycor [wycor] of f-patch
+;      set was-in-window? true
+;    ]
+;    [
+;      set was-in-window? false
+;    ]
+;  ]
+;
+;  ask patches
+;  [
+;    ifelse was-in-window?
+;    [
+;      set pcolor f-pcolor
+;      set wxcor f-wxcor
+;      set wycor f-wycor
+;    ]
+;    [
+;      set pcolor black
+;    ]
+;  ]
+;  set-grid-with (patches with [not was-in-window?])
+;    wx-max + move-px
+;    wx-min + move-px
+;    wy-max + move-py
+;    wy-min + move-py
+;
+;  foreach equations
+;  [
+;    equation ->
+;    graph-implicit-with equation (patches with [not was-in-window?])
+;    print "graphing"
+;  ]
+
+  set-grid
+  wx-max + move-wx
+  wx-min + move-wx
+  wy-max + move-wy
+  wy-min + move-wy
+
+  clear-window
+  equations.graph-all
+
+  tick
 end
 
 ; setup output area
@@ -420,40 +809,12 @@ end
 to output.print-message [msg]
   output-print msg
 end
-
-to view-coordinates [ opt ] ; turtle with shape "x" needed
-  ; clear
-  if opt = 0
-  [
-    set label (word "(" precision (mouse-xcor * x-factor) coordinate-precision ", " precision (mouse-ycor * y-factor) coordinate-precision ")")
-  ]
-
-  ; graph only
-  if opt = 1
-  [
-    set label (
-    (word "closest graph: " get-closest-graph mouse-xcor mouse-ycor)
-    )
-  ]
-
-  ; coordinate and graph
-  if opt = 2
-  [
-
-  ]
-
-  ; clear
-  if opt = 3
-  [
-    set label ""
-  ]
-end
 @#$#@#$#@
 GRAPHICS-WINDOW
-31
+17
 10
-540
-520
+566
+560
 -1
 -1
 1.0
@@ -466,92 +827,15 @@ GRAPHICS-WINDOW
 0
 0
 1
--250
-250
--250
-250
+-270
+270
+-270
+270
 1
 1
 1
 ticks
 30.0
-
-BUTTON
-571
-534
-653
-567
-update axes
-update-axes
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-0
-
-SLIDER
-574
-294
-948
-327
-x-max
-x-max
-0.1
-100
-250.0
-0.1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-574
-332
-950
-365
-y-max
-y-max
-0.1
-100
-250.0
-0.1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-572
-450
-744
-483
-number-of-labels
-number-of-labels
-1
-40
-15.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-572
-491
-744
-524
-label-length
-label-length
-0
-max-pxcor
-0.3
-0.1
-1
-NIL
-HORIZONTAL
 
 BUTTON
 655
@@ -568,24 +852,24 @@ NIL
 NIL
 NIL
 NIL
-0
+1
 
 INPUTBOX
 574
 113
-1072
+1082
 173
 =0
-sin (x * 180 / pi) + cos ( y * 180 / pi) + offset
+x - 2 ^ y
 1
 0
 String (reporter)
 
 BUTTON
 574
-219
+182
 704
-252
+215
 add graph
 add-graph
 NIL
@@ -593,33 +877,33 @@ NIL
 T
 OBSERVER
 NIL
-NIL
+A
 NIL
 NIL
 0
 
 BUTTON
-1023
-374
-1116
-407
+1088
+360
+1181
+393
 clear all graphs
-clear-window
+clear-all-graphs
 NIL
 1
 T
 OBSERVER
 NIL
-NIL
+E
 NIL
 NIL
 0
 
 BUTTON
-719
-221
-882
-254
+705
+182
+835
+215
 clear window and graph
 clear-window-graph
 NIL
@@ -627,37 +911,10 @@ NIL
 T
 OBSERVER
 NIL
-NIL
-NIL
-NIL
-0
-
-BUTTON
-574
-371
-676
-404
-update window
-update-window
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
+G
 NIL
 NIL
 0
-
-TEXTBOX
-577
-425
-727
-443
-Axes settings:
-12
-0.0
-1
 
 TEXTBOX
 578
@@ -670,10 +927,10 @@ Graphing
 1
 
 TEXTBOX
-575
-267
-725
-285
+577
+227
+727
+245
 Window
 12
 0.0
@@ -706,23 +963,6 @@ NIL
 NIL
 1
 
-BUTTON
-655
-534
-745
-567
-reset axes
-reset-axes
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-0
-
 OUTPUT
 1085
 10
@@ -731,10 +971,10 @@ OUTPUT
 11
 
 BUTTON
-1023
-328
-1175
-361
+1087
+323
+1239
+356
 remove equation of #
 button.remove-equation
 NIL
@@ -748,59 +988,48 @@ NIL
 0
 
 INPUTBOX
-1193
-327
-1267
-387
+1257
+322
+1331
+382
 equation#
-0.0
+1.0
 1
 0
 Number
 
 TEXTBOX
-774
-377
-924
-405
-Show coordinates of cursor\n(On mousedown)
+779
+10
+929
+38
+Show coordinates of cursor\n(When mouse presses down)
 11
 0.0
 1
 
-SWITCH
-772
-410
-946
-443
-show-coordinates?
-show-coordinates?
-0
-1
--1000
-
 BUTTON
-776
-535
-939
-568
-show
+775
+75
+938
+108
+show mouse coordinate
 show-coordinates
 T
 1
 T
 OBSERVER
 NIL
-NIL
+S
 NIL
 NIL
 0
 
 SLIDER
-772
-496
-969
-529
+776
+39
+973
+72
 coordinate-precision
 coordinate-precision
 0
@@ -811,65 +1040,153 @@ coordinate-precision
 dec. places
 HORIZONTAL
 
-SLIDER
-1031
-426
-1210
-459
-implicit-graph-tolerance
-implicit-graph-tolerance
-0.001
-1
-1.0
-0.001
-1
-NIL
-HORIZONTAL
-
-SLIDER
-1260
-416
-1432
-449
-offset
-offset
-slider-min1
-slider-max1
-0.0
-.1
-1
-.
-HORIZONTAL
-
 INPUTBOX
-1040
-508
-1119
-568
-slider-min
--50.0
-1
-0
-Number
-
-INPUTBOX
-1167
-543
-1328
-603
-slider-max
-30.0
+576
+315
+657
+375
+zoom-factor
+2.0
 1
 0
 Number
 
 BUTTON
-1200
-478
-1602
-511
+577
+251
+658
+284
+zoom in
+zoom-in
 NIL
-set slider-min1 slider-min\nset slider-max1 slider-max
+1
+T
+OBSERVER
+NIL
+I
+NIL
+NIL
+0
+
+BUTTON
+577
+283
+658
+316
+zoom out
+zoom-out
+NIL
+1
+T
+OBSERVER
+NIL
+O
+NIL
+NIL
+0
+
+BUTTON
+657
+314
+750
+347
+reset window
+zoom-reset
+NIL
+1
+T
+OBSERVER
+NIL
+W
+NIL
+NIL
+0
+
+BUTTON
+658
+251
+751
+284
+center at mouse
+zoom-center
+NIL
+1
+T
+OBSERVER
+NIL
+C
+NIL
+NIL
+0
+
+SWITCH
+578
+379
+687
+412
+show-axes?
+show-axes?
+0
+1
+-1000
+
+BUTTON
+658
+283
+750
+316
+move window
+move-window
+T
+1
+T
+OBSERVER
+NIL
+M
+NIL
+NIL
+0
+
+INPUTBOX
+19
+615
+131
+675
+axes-color
+3.0
+1
+0
+Color
+
+INPUTBOX
+131
+615
+249
+675
+graph-color
+135.0
+1
+0
+Color
+
+INPUTBOX
+249
+615
+368
+675
+background-color
+0.0
+1
+0
+Color
+
+BUTTON
+367
+615
+483
+648
+update window
+update-window-colors
 NIL
 1
 T
@@ -878,54 +1195,329 @@ NIL
 NIL
 NIL
 NIL
+0
+
+SLIDER
+774
+251
+946
+284
+a
+a
+f-a-min
+f-a-max
+3.0
+f-a-increment
+1
+NIL
+HORIZONTAL
+
+INPUTBOX
+855
+614
+943
+674
+a-increment
+1.0
+1
+0
+Number
+
+INPUTBOX
+942
+614
+1031
+674
+a-max
+50.0
+1
+0
+Number
+
+INPUTBOX
+769
+614
+856
+674
+a-min
+-50.0
+1
+0
+Number
+
+SLIDER
+774
+283
+946
+316
+b
+b
+f-b-min
+f-b-max
+-6.0
+f-b-increment
+1
+NIL
+HORIZONTAL
+
+INPUTBOX
+769
+673
+856
+733
+b-min
+-50.0
+1
+0
+Number
+
+INPUTBOX
+856
+673
+944
+733
+b-increment
+1.0
+1
+0
+Number
+
+INPUTBOX
+943
+673
+1031
+733
+b-max
+50.0
+1
+0
+Number
+
+INPUTBOX
+769
+731
+855
+791
+c-min
+-50.0
+1
+0
+Number
+
+INPUTBOX
+855
+731
+943
+791
+c-increment
+0.5
+1
+0
+Number
+
+INPUTBOX
+943
+731
+1031
+791
+c-max
+10.0
+1
+0
+Number
+
+BUTTON
+769
+582
+1029
+615
+update constant sliders
+update-constant-sliders
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+SLIDER
+774
+314
+946
+347
+c
+c
+f-c-min
+f-c-max
+4.5
+f-c-increment
+1
+NIL
+HORIZONTAL
+
+BUTTON
+774
+383
+947
+416
+detect change (BETA)
+detect-change
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
+
+TEXTBOX
+777
+225
+927
+243
+Constant Sliders
+12
+0.0
 1
 
+BUTTON
+774
+351
+947
+384
+update window with constants
+update-window-with-constants
+NIL
+1
+T
+OBSERVER
+NIL
+U
+NIL
+NIL
+0
+
 @#$#@#$#@
-## THIS IS A PART OF THE LARGER PROJECT. IT IS ***INCOMPLETE***
-
-## THIS FIELD IS FOR HOMEWORK PURPOSES ONLY
-1. reporter that accepts parameters
-	1.1 used for reporter `label-axes`
-2. `run` command combined with *anonymous command*
-	2.1 used for drawing the intervals on the axes
-	2.2 does it suggest the possibility of a custom function input by user to graph?
-
-
 ## WHAT IS IT?
 
-(a general understanding of what the model is trying to show or explain)
-
-## HOW IT WORKS
-
-(what rules the agents use to create the overall behavior of the model)
+This is a general-purpose graphing calculator. It is intended to visualize how algebraic graphs would look like. This calculator is able to graph implicit equations, which is any equation that can be written as 0 = *. (With some exeptions, which are documented in the KNOWN BUGS AND MISFEATURES section)
 
 ## HOW TO USE IT
 
-(how to use the model, including a description of each of the items in the Interface tab)
+Before doing anything, **setup** the model. This will initialize all the necessary features and the visual area.
 
+Use **reset all** to reset all the inputs, sliders, and internal states of the graphing calculator to their default values.
+
+### GRAPHING
+To graph an equation, put the equation in the input bar named **=0** and hit **add graph**.
+
+The equation box will keep track of all graphed equations. When there is a error in the syntax of the equation, it will also show up in there, giving some important details about the error.
+
+Use **clear window and graph** instead of **add graph** if you want to remove all previously graphed equations and only graph the one in the **=0** input bar.
+
+**remove equation of #** will remove one equation based on its index. The index is the number in the **equation#** input bar. The corresponding equation can be looked up in the equation box above.
+
+**clear all graphs** will clear all graphed equations, but will not reset any window settings.
+
+### Syntax of Equation
+Put the equation in the form of "0 = *" and leave out the "0 =" part. Currently this is the only way to obtain a correct graph.
+
+For example, to graph the equation "y ^ 2 + x ^ 2 = 100", type "y ^ 2 + x ^ 2 - 100".
+
+To graph a function, simply put in the function and add "- y" in the end.
+For example, to graph the function "y = x + 4", type "x + 4 - y".
+
+The calculator requires equations to be put in the format of a Netlogo expression. For the usage of this model, this means that many expressions might look different from a typical math print.
+
+Some important things to note about operators and syntax:
+
+  * Use basic arithmetic operators as usual, such as **+, -, \*, /**
+  * Use **^** for exponentiation, where "10 ^ 2" means 10 squared
+  * Use the *log* keyword followed by the number, and then the base, with one space in between. For example, "log 64 2" means log of 64 to the base 2, which is 6.
+  * Put a space around each operator and numberical value
+  * _π_ and _e_ are predifined. To use them, type in "pi" or "e"
+  * Netlogo provides trigonometric functions, but they are in degrees
+  * "x" and "y" follow the conventional meaning of algebra
+  * DO NOT type in any equation lacking both "x" and "y", and the calculator will not graph anything if you do this. 
+    * Theoretically, 0 is not equal to anything except for 0, so "0 = a" where a is anthing not 0, will not produce a graph, since it's a true statement. "0 = 0" will produce a graph that's true for every x and y. These are not meaningful graphs, so the calculator avoids them
+
+If an error occurs when the program tries to graph the equation, the error will show up in the **Graphed Equations** box, and the program will make a beep sound.
+
+For more imformation, including some limitation in numbers, refer to the [Math section in Netlogo's Programming Guide](https://ccl.northwestern.edu/netlogo/docs/programming.html#math)
+
+### WINDOW
+Window refers to the visual area of the calculator.
+
+There are several operations available on the window, **zoom in**, **zoom out**, **center at mouse**, **move window**, and **reset window**.
+
+When the mouse(cursor) is in the window, **zoom in** and **zoom out** will use the mouse as the center. If the mosue is not in the window, they will zoom using the center of the window.
+
+When mouse is in window, **center at mouse** will set the mouse coordinate as the new center for the window. If the mouse is not in the window, **center at mouse** does nothing.
+
+**reset window** will reset the window settings to the default values, including the zoom and center of the window.
+
+All the zooming features zoom by the **zoom-factor**.
+
+Turn **show-axes?** off if you don't want to see the x- and y-axes in the window.
+
+The window shows its boundaries with _x min_, _x max_, _y min_ and _y max_. These values will change when you zoom or move the window.
+
+The colors of window background, graph, and axes can be customized. To do this, scroll down and change the color in the input bar, and then press **update window**.
+
+### CONSTANT SLIDERS
+
+**Constant Sliders** provide a way to include letter constants into the equation. When you include one of the letters, you can control the graph with the slider.
+
+**update window with constants** will reflect the change of the slider value in all graphs.
+
+To change the minimum, maximum, or the increment step of the sliders, scroll to the bottom of the calculator, and change the corresponding value. When finished, press **update constant sliders**.
+
+**detect change** (BETA) will automatically detect any change in the slider value and update the equation based on the new value. At this point, this feature is not stable.
+
+<!---
 ## THINGS TO NOTICE
 
 (suggested things for the user to notice while running the model)
 
-## THINGS TO TRY
+--->
 
+## THINGS TO TRY
+<!---
 (suggested things for the user to try to do (move sliders, switches, etc.) with the model)
+--->
+Try some interesting equations.
 
 ## EXTENDING THE MODEL
-
+<!---
 (suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
+--->
 
+  * Use different colors for consecutive graphs, automatically.
+  * Optimize **move window** and the zoomimg features
+
+<!---
 ## NETLOGO FEATURES
 
 (interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
+--->
 
-## RELATED MODELS
+## KNOWN BUGS AND MISFEATURES
 
-(models in the NetLogo Models Library and elsewhere which are of related interest)
+  * Functions like _floor_, _round_, _mod_, produces a continuous graph, which is unexpected.
+  * Square root functions and logarithmic functions can be very slow, and may show an incomplete graph
+    * A workaround for logarithmic function is to do exponentiation on y (e.g. instead of 2 ^ x - y = 0, type x - 2 ^ y = 0)
+  * Odd root functions only produce half of the graph that they are supposed to produce, in addition to being very slow
+  * Equations that contain exponentiation with a negative power will not work
+
 
 ## CREDITS AND REFERENCES
 
-(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+Inspiration from Peter Brooks, at Stuyvesant High School. He solved most of the problems in this model.
 @#$#@#$#@
 default
 true
